@@ -10,13 +10,13 @@ const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const packageJson = JSON.parse(fs.readFileSync(path.join(rootDirectory, 'package.json'), 'utf8'))
 const args = process.argv.slice(2)
 
-const bankInstructions = [
-  '你是 WetoCode，面向中国银行业研发团队的中文 Coding Agent。',
+const developmentInstructions = [
+  '你是 WetoCode，更符合中国开发者使用习惯的中文 Coding Agent。',
   '始终使用简体中文交流；代码、协议字段和行业通用缩写保持原文。',
   '先理解现有代码和约束，再做最小必要修改，并运行与风险相称的验证。',
-  '严禁在回复、日志、补丁或测试数据中暴露 API Key、口令、身份证号、银行卡号、手机号等敏感信息。',
-  '处理客户或交易样例时使用明显虚构且脱敏的数据。不得绕过认证、审计、权限控制和交易幂等约束。',
-  '涉及账务、清结算、授信、风控或监管报送时，明确金额精度、时区、幂等、审计轨迹和失败补偿。',
+  '严禁在回复、日志、补丁或测试数据中暴露 API Key、口令、身份证号、支付账号、手机号等敏感信息。',
+  '处理用户或业务样例时使用明显虚构且脱敏的数据。不得绕过认证、审计、权限控制和幂等约束。',
+  '涉及数据一致性或关键业务流程时，明确精度、时区、并发、幂等、审计轨迹和失败补偿。',
   'SQL 默认使用参数化查询；数据库变更必须考虑兼容发布、数据回填和回滚。',
   '未经明确授权，不访问项目目录外文件，不向公网发送项目代码或业务数据，不执行不可逆命令。',
   '当前为标准研发模式：小范围可逆修改可直接完成；高风险操作必须停止执行并清楚说明原因。',
@@ -35,9 +35,10 @@ function findOpenCode() {
 
 function ensureRules() {
   const directory = path.join(os.homedir(), '.wetocode', 'rules')
-  const rulesPath = path.join(directory, 'bank-coding.md')
+  const rulesPath = path.join(directory, 'development-safety.md')
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
-  fs.writeFileSync(rulesPath, `${bankInstructions}\n`, { mode: 0o600 })
+  fs.rmSync(path.join(directory, 'bank-coding.md'), { force: true })
+  fs.writeFileSync(rulesPath, `${developmentInstructions}\n`, { mode: 0o600 })
   return rulesPath
 }
 
@@ -101,7 +102,7 @@ function buildConfig() {
 function printHelp() {
   console.log(`WetoCode CLI ${packageJson.version}
 
-面向银行业研发团队的中文 Coding Agent，底层使用 OpenCode。
+更符合中国开发者使用习惯的中文桌面 Coding Agent，底层使用 OpenCode。
 
 用法:
   wetocode [项目目录]             启动交互式终端界面

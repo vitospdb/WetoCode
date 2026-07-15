@@ -209,8 +209,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .starter-grid button > svg:first-child { color: var(--green); }
 .starter-grid button span { flex: 1; min-width: 0; font-size: 11px; font-weight: 590; }
 .starter-grid button > svg:last-child { color: var(--text-muted); }
-.bank-guard { display: flex; align-items: center; gap: 6px; margin-top: 18px; color: var(--text-muted); font-size: 9px; }
-.bank-guard svg { color: var(--green); }
+.safety-guard { display: flex; align-items: center; gap: 6px; margin-top: 18px; color: var(--text-muted); font-size: 9px; }
+.safety-guard svg { color: var(--green); }
 
 .message-list { width: min(820px, calc(100% - 44px)); margin: 0 auto; padding: 30px 0 40px; }
 .message { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 11px; margin-bottom: 30px; }

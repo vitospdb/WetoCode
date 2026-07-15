@@ -848,7 +848,7 @@ function App() {
   return (
     <div className={`app-shell ${sidebarOpen ? '' : 'sidebar-collapsed'} ${panel !== 'none' ? 'panel-open' : ''} ${panel === 'changes' || panel === 'files' ? 'changes-open' : ''}`} data-theme={bootstrap.settings.appearance.theme} data-density={bootstrap.settings.appearance.density}>
       <header className="titlebar">
-        <div className="brand"><div className="brand-mark">W</div><div><strong>WetoCode</strong><span>智能开发工作台</span></div></div>
+        <div className="brand"><div className="brand-mark">W</div><div><strong>WetoCode</strong><span>中文桌面 Coding Agent</span></div></div>
         <div className="project-switcher">
           <FolderOpen size={15} />
           <button onClick={chooseProject}>{project?.name || '选择项目'}</button>
@@ -1135,11 +1135,11 @@ function Welcome({ project, onTask }: { project: ProjectInfo; onTask: (prompt: s
     <div className="welcome">
       <div className="welcome-symbol"><Code2 size={30} /></div>
       <h2>想从哪里开始？</h2>
-      <p>已打开 <b>{project.name}</b>，WetoCode 会先理解代码，再执行修改与验证。</p>
+      <p>更符合中国开发者使用习惯的中文桌面 Coding Agent。已打开 <b>{project.name}</b>，会先理解代码，再执行修改与验证。</p>
       <div className="starter-grid">
         {starterTasks.map((task) => <button key={task.label} onClick={() => onTask(task.prompt)}><task.icon size={19} /><span>{task.label}</span><ChevronRight size={15} /></button>)}
       </div>
-      <div className="bank-guard"><ShieldCheck size={16} /><span>客户数据、交易逻辑和危险操作会按银行业安全边界处理</span></div>
+      <div className="safety-guard"><ShieldCheck size={16} /><span>敏感数据、项目边界和危险操作会按安全规则处理</span></div>
     </div>
   )
 }
@@ -1808,7 +1808,7 @@ function ContextPanel({ settings, provider, tokenTotal, percent, canManage, onCo
       <div className="strategy-line"><span><b>预留输出空间</b><small>避免模型没有空间完成回答</small></span><b className="value">{compactNumber(settings.context.reservedTokens)}</b></div>
     </section>
     <section className="context-section"><h3><History size={16} />会话时间线</h3><div className="context-actions"><button disabled={!canManage} onClick={() => void onCompact()}><BrainCircuit size={14} /><span><b>立即压缩</b><small>整理长对话并保留关键状态</small></span></button><button disabled={!canManage} onClick={() => void onFork()}><GitBranch size={14} /><span><b>创建分支</b><small>从当前会话复制一条独立路线</small></span></button><button disabled={!canManage} onClick={() => void onRestore()}><RotateCcw size={14} /><span><b>恢复回退内容</b><small>撤销最近一次消息回退</small></span></button></div></section>
-    <section className="context-section"><h3><ShieldCheck size={16} />银行业规则</h3><div className="rule-list"><span><CheckCircle2 size={14} />敏感数据默认脱敏</span><span><CheckCircle2 size={14} />资金链路检查精度与幂等</span><span><CheckCircle2 size={14} />数据库变更检查回滚方案</span><span>{settings.accessMode === 'full' ? <ShieldAlert size={14} /> : <CheckCircle2 size={14} />}{settings.accessMode === 'full' ? '本机操作已授权完全控制' : '危险操作默认拦截'}</span><span><CheckCircle2 size={14} />禁止会话公开分享</span></div></section>
+    <section className="context-section"><h3><ShieldCheck size={16} />项目安全规则</h3><div className="rule-list"><span><CheckCircle2 size={14} />敏感数据默认脱敏</span><span><CheckCircle2 size={14} />关键流程检查一致性与幂等</span><span><CheckCircle2 size={14} />数据库变更检查回滚方案</span><span>{settings.accessMode === 'full' ? <ShieldAlert size={14} /> : <CheckCircle2 size={14} />}{settings.accessMode === 'full' ? '本机操作已授权完全控制' : '危险操作默认拦截'}</span><span><CheckCircle2 size={14} />禁止会话公开分享</span></div></section>
     <div className="context-note"><Zap size={15} /><p><b>上下文由本地执行引擎管理</b><span>WetoCode 在压缩时保留任务目标、关键决策和未完成事项，不承诺超过当前模型的真实窗口。</span></p></div>
   </div></>
 }

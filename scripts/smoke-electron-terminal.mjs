@@ -11,6 +11,8 @@ const projectPath = path.join(temporaryRoot, 'project')
 const port = 9820 + Math.floor(Math.random() * 120)
 await fs.mkdir(userData, { recursive: true })
 await fs.mkdir(projectPath)
+await fs.mkdir(path.join(userData, 'rules'), { recursive: true })
+await fs.writeFile(path.join(userData, 'rules', 'bank-coding.md'), 'legacy industry rules\n')
 await fs.writeFile(path.join(userData, 'settings.json'), JSON.stringify({
   recentProjects: [projectPath],
   accessMode: 'standard',
@@ -132,9 +134,14 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   if (!terminalText.includes('WETOCODE_TERMINAL_UI_OK')) throw new Error(`Timed out waiting for terminal accessibility output. ${logs}`)
+  const legacyRulesExist = await fs.access(path.join(userData, 'rules', 'bank-coding.md')).then(() => true).catch(() => false)
+  const developmentRules = await fs.readFile(path.join(userData, 'rules', 'development-safety.md'), 'utf8').catch(() => '')
+  if (legacyRulesExist || !developmentRules.includes('中国开发者使用习惯')) {
+    throw new Error('Legacy rules were not migrated to the generic development safety rules.')
+  }
   await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '关闭终端').click()`)
   await until(client, `!document.querySelector('.terminal-panel')`, 'terminal close', 5_000)
-  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', shellOutput: 'WETOCODE_TERMINAL_UI_OK' }, null, 2))
+  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
 } finally {
   client?.close()
   child.kill('SIGTERM')

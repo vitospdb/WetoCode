@@ -1,8 +1,8 @@
 {
   "name": "wetocode",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
-  "description": "面向银行业研发团队的中文桌面 Coding Agent",
+  "description": "更符合中国开发者使用习惯的中文桌面 Coding Agent",
   "main": "electron/main.cjs",
   "bin": {
     "wetocode": "bin/wetocode.mjs"
