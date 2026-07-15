@@ -1,0 +1,144 @@
+import { spawn } from 'node:child_process'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wetocode-terminal-ui-'))
+const userData = path.join(temporaryRoot, 'user-data')
+const projectPath = path.join(temporaryRoot, 'project')
+const port = 9820 + Math.floor(Math.random() * 120)
+await fs.mkdir(userData, { recursive: true })
+await fs.mkdir(projectPath)
+await fs.writeFile(path.join(userData, 'settings.json'), JSON.stringify({
+  recentProjects: [projectPath],
+  accessMode: 'standard',
+  appearance: { theme: 'light', density: 'comfortable', zoom: 1, sidebarOpen: true },
+}, null, 2))
+
+const binary = process.env.WETOCODE_PACKAGED_BINARY || path.join(root, 'node_modules', 'electron', 'dist', 'electron')
+const child = spawn(binary, [
+  `--remote-debugging-port=${port}`,
+  `--user-data-dir=${userData}`,
+  '--no-sandbox',
+  ...(process.env.WETOCODE_PACKAGED_BINARY ? [] : ['.']),
+], {
+  cwd: root,
+  env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0', OPENCODE_BIN: path.join(root, 'node_modules', 'opencode-ai', 'bin', 'opencode.exe') },
+  stdio: ['ignore', 'pipe', 'pipe'],
+})
+let logs = ''
+child.stdout.on('data', (chunk) => { logs += chunk.toString() })
+child.stderr.on('data', (chunk) => { logs += chunk.toString() })
+
+async function debuggerUrl() {
+  const deadline = Date.now() + 20_000
+  while (Date.now() < deadline) {
+    try {
+      const pages = await fetch(`http://127.0.0.1:${port}/json`).then((response) => response.json())
+      const page = pages.find((item) => item.type === 'page')
+      if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  throw new Error(`Electron debugger did not start. ${logs}`)
+}
+
+function cdp(url) {
+  const socket = new WebSocket(url)
+  let id = 0
+  const pending = new Map()
+  socket.addEventListener('message', (message) => {
+    const payload = JSON.parse(message.data)
+    const request = pending.get(payload.id)
+    if (!request) return
+    pending.delete(payload.id)
+    payload.error ? request.reject(new Error(payload.error.message)) : request.resolve(payload.result)
+  })
+  const ready = new Promise((resolve, reject) => {
+    socket.addEventListener('open', resolve, { once: true })
+    socket.addEventListener('error', reject, { once: true })
+  })
+  return {
+    async send(method, params = {}) {
+      await ready
+      const requestId = ++id
+      const response = new Promise((resolve, reject) => pending.set(requestId, { resolve, reject }))
+      socket.send(JSON.stringify({ id: requestId, method, params }))
+      return response
+    },
+    async evaluate(expression) {
+      await ready
+      const requestId = ++id
+      const response = new Promise((resolve, reject) => pending.set(requestId, { resolve, reject }))
+      socket.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+      const result = await response
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.text)
+      return result.result.value
+    },
+    close: () => socket.close(),
+  }
+}
+
+async function until(client, expression, label, timeout = 30_000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (await client.evaluate(expression)) return
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  const ui = await client.evaluate(`({
+    toolbar: document.querySelector('.terminal-toolbar')?.innerText,
+    toast: document.querySelector('.toast')?.innerText,
+    pty: document.querySelector('.terminal-panel')?.dataset.ptyId,
+  })`).catch(() => undefined)
+  throw new Error(`Timed out waiting for ${label}. UI: ${JSON.stringify(ui)}. ${logs}`)
+}
+
+let client
+try {
+  client = cdp(await debuggerUrl())
+  await until(client, `Boolean(document.querySelector('.app-shell'))`, 'application bootstrap')
+  await client.evaluate(`[...document.querySelectorAll('.header-actions button')].find((button) => button.title === '打开终端').click()`)
+  await until(client, `document.querySelector('.terminal-toolbar')?.innerText.includes('运行中')`, 'running terminal', 60_000)
+  await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent.includes('WetoCode CLI')`, 'embedded CLI mode', 10_000)
+  const cliPtyId = await client.evaluate(`document.querySelector('.terminal-panel')?.dataset.ptyId`)
+  await client.evaluate(`[...document.querySelectorAll('.terminal-mode-switch button')].find((button) => button.textContent === 'Shell').click()`)
+  await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent === 'Shell' && document.querySelector('.terminal-toolbar')?.innerText.includes('运行中') && document.querySelector('.terminal-panel')?.dataset.ptyId && document.querySelector('.terminal-panel')?.dataset.ptyId !== ${JSON.stringify(cliPtyId)}`, 'shell mode', 30_000)
+  const shellCommand = process.platform === 'win32'
+    ? `Set-Content -Path terminal-ui-result.txt -Value 'WETOCODE_TERMINAL_UI_OK'\r`
+    : `printf 'WETOCODE_TERMINAL_UI_OK\\n' | tee terminal-ui-result.txt\r`
+  await client.evaluate(`window.wetocode.sendTerminalInput(document.querySelector('.terminal-panel').dataset.ptyId, ${JSON.stringify(shellCommand)})`)
+  const resultDeadline = Date.now() + 20_000
+  let resultFile = ''
+  while (Date.now() < resultDeadline) {
+    resultFile = await fs.readFile(path.join(projectPath, 'terminal-ui-result.txt'), 'utf8').catch(() => '')
+    if (resultFile.includes('WETOCODE_TERMINAL_UI_OK')) break
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  if (!resultFile.includes('WETOCODE_TERMINAL_UI_OK')) {
+    const debugText = await client.evaluate(`({ host: document.querySelector('.terminal-host')?.innerText, tree: document.querySelector('.xterm-accessibility-tree')?.innerText, pty: document.querySelector('.terminal-panel')?.dataset.ptyId })`)
+    throw new Error(`Terminal command did not create the result file. UI: ${JSON.stringify(debugText)}. ${logs}`)
+  }
+  const outputDeadline = Date.now() + 20_000
+  let terminalText = ''
+  while (Date.now() < outputDeadline) {
+    const tree = await client.send('Accessibility.getFullAXTree')
+    terminalText = [
+      tree.nodes.map((node) => node.name?.value || node.value?.value || '').join('\n'),
+      await client.evaluate(`document.querySelector('.xterm-accessibility-tree')?.innerText || ''`),
+    ].join('\n')
+    if (terminalText.includes('WETOCODE_TERMINAL_UI_OK')) break
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  if (!terminalText.includes('WETOCODE_TERMINAL_UI_OK')) throw new Error(`Timed out waiting for terminal accessibility output. ${logs}`)
+  await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '关闭终端').click()`)
+  await until(client, `!document.querySelector('.terminal-panel')`, 'terminal close', 5_000)
+  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', shellOutput: 'WETOCODE_TERMINAL_UI_OK' }, null, 2))
+} finally {
+  client?.close()
+  child.kill('SIGTERM')
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  await fs.rm(temporaryRoot, { recursive: true, force: true })
+}
