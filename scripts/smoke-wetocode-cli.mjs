@@ -51,6 +51,15 @@ async function stopProcess(child) {
   ])
 }
 
+async function waitFor(condition, label, timeout = 20_000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (condition()) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`${label} timed out.`)
+}
+
 let cli
 try {
   const url = await serverUrl()
@@ -71,16 +80,14 @@ try {
   let output = ''
   cli.stdout.on('data', (chunk) => { output += chunk.toString() })
   cli.stderr.on('data', (chunk) => { output += chunk.toString() })
+  await waitFor(() => output.includes('WetoCode >'), 'WetoCode CLI prompt')
+  if (!output.includes('\x1b]0;WetoCode\x07')) throw new Error(`WetoCode CLI did not set a terminal title: ${output}`)
   cli.stdin.write('只回复 WETOCODE_CLI_MODEL_OK\n')
 
-  const deadline = Date.now() + 90_000
-  while (Date.now() < deadline && !output.includes('WETOCODE_CLI_MODEL_OK')) {
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  if (!output.includes('WETOCODE_CLI_MODEL_OK')) throw new Error(`CLI model response timed out. ${output}\n${serverOutput}`)
+  await waitFor(() => output.includes('WETOCODE_CLI_MODEL_OK'), 'CLI model response', 90_000)
   if (/open\s?code/i.test(output)) throw new Error(`Upstream branding is visible: ${output}`)
   cli.stdin.write('/exit\n')
-  console.log(JSON.stringify({ ok: true, prompt: 'WetoCode >', modelResponse: 'WETOCODE_CLI_MODEL_OK', upstreamBrandVisible: false }, null, 2))
+  console.log(JSON.stringify({ ok: true, prompt: 'WetoCode >', terminalTitle: 'WetoCode', modelResponse: 'WETOCODE_CLI_MODEL_OK', upstreamBrandVisible: false }, null, 2))
 } finally {
   await stopProcess(cli)
   await stopProcess(server)

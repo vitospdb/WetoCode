@@ -15,6 +15,8 @@ const modelId = argument('model')
 const providerName = argument('provider-name', modelId)
 const version = argument('version', '0.0.0')
 const publicFree = argument('public-free') === 'true'
+const terminalTitle = 'WetoCode'
+process.title = terminalTitle
 
 if (!serviceUrl || !providerId || !modelId) {
   process.stderr.write('WetoCode CLI 启动参数不完整。\n')
@@ -35,6 +37,10 @@ function write(text = '') {
 
 function line(text = '') {
   write(`${text}\r\n`)
+}
+
+function setTerminalTitle() {
+  write(`\x1b]0;${terminalTitle}\x07`)
 }
 
 function cleanError(error) {
@@ -208,6 +214,7 @@ function showHelp() {
 }
 
 function showWelcome() {
+  setTerminalTitle()
   line(`${colors.green}WetoCode CLI ${version}${colors.reset}`)
   line(`${colors.muted}项目：${projectPath}${colors.reset}`)
   line(`${colors.muted}模型：${providerName || modelId} · ${modelId}${colors.reset}`)

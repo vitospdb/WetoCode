@@ -17,7 +17,7 @@ describe('integrated terminal modes', () => {
       serviceUrl: 'http://127.0.0.1:4096',
       projectPath: 'D:\\project',
       provider: { id: 'wetocode-free', providerId: 'opencode', model: 'mimo-v2.5-free', name: '公共免费模型' },
-      version: '0.2.5',
+      version: '0.2.6',
       platform: 'win32',
     })
     expect(input).toMatchObject({
@@ -30,7 +30,7 @@ describe('integrated terminal modes', () => {
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand',
     ])
     expect(decodePowerShellCommand(input.args)).toBe(
-      "$env:ELECTRON_RUN_AS_NODE='1'; & 'C:\\WetoCode\\WetoCode.exe' 'C:\\WetoCode\\resources\\app.asar\\electron\\wetocode-cli.mjs' '--service-url' 'http://127.0.0.1:4096' '--project' 'D:\\project' '--provider' 'opencode' '--model' 'mimo-v2.5-free' '--provider-name' '公共免费模型' '--version' '0.2.5' '--public-free' 'true'; exit $LASTEXITCODE",
+      "$env:ELECTRON_RUN_AS_NODE='1'; try { $Host.UI.RawUI.WindowTitle='WetoCode' } catch {}; & 'C:\\WetoCode\\WetoCode.exe' 'C:\\WetoCode\\resources\\app.asar\\electron\\wetocode-cli.mjs' '--service-url' 'http://127.0.0.1:4096' '--project' 'D:\\project' '--provider' 'opencode' '--model' 'mimo-v2.5-free' '--provider-name' '公共免费模型' '--version' '0.2.6' '--public-free' 'true'; exit $LASTEXITCODE",
     )
   })
 
@@ -41,7 +41,7 @@ describe('integrated terminal modes', () => {
       serviceUrl: 'http://127.0.0.1:4096',
       projectPath: '/project',
       provider: { id: 'custom', providerId: 'openai', model: 'gpt', name: "开发者's 模型" },
-      version: '0.2.5',
+      version: '0.2.6',
       platform: 'linux',
     })).toMatchObject({
       command: '/opt/WetoCode/wetocode',

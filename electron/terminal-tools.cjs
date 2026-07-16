@@ -9,6 +9,7 @@ function powershellLiteral(value) {
 function windowsCliCommand(runtime, args) {
   const script = [
     "$env:ELECTRON_RUN_AS_NODE='1'",
+    "try { $Host.UI.RawUI.WindowTitle='WetoCode' } catch {}",
     `& ${powershellLiteral(runtime)} ${args.map(powershellLiteral).join(' ')}`,
     'exit $LASTEXITCODE',
   ].join('; ')

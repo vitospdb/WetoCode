@@ -9,6 +9,14 @@ import { fileURLToPath } from 'node:url'
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(rootDirectory, 'package.json'), 'utf8'))
 const args = process.argv.slice(2)
+const terminalTitle = 'WetoCode'
+
+function setTerminalTitle() {
+  process.title = terminalTitle
+  if (process.stdout.isTTY) process.stdout.write(`\x1b]0;${terminalTitle}\x07`)
+}
+
+setTerminalTitle()
 
 const developmentInstructions = [
   '你是 WetoCode，更符合中国开发者使用习惯的中文 Coding Agent。',
@@ -141,13 +149,18 @@ const child = spawn(openCode, args, {
   stdio: 'inherit',
   windowsHide: false,
 })
+const titleTimer = setInterval(setTerminalTitle, 1_000)
+titleTimer.unref()
 
 child.on('error', (error) => {
+  clearInterval(titleTimer)
   console.error(`WetoCode: 无法启动 OpenCode 引擎：${error.message}`)
   process.exitCode = 1
 })
 
 child.on('exit', (code, signal) => {
+  clearInterval(titleTimer)
+  setTerminalTitle()
   if (signal) process.kill(process.pid, signal)
   else process.exitCode = code ?? 1
 })

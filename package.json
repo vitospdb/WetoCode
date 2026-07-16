@@ -1,6 +1,6 @@
 {
   "name": "wetocode",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "更符合中国开发者使用习惯的中文桌面 Coding Agent",
   "main": "electron/main.cjs",
