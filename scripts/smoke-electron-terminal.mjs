@@ -42,6 +42,12 @@ function windowsProcessIsRunning(pid) {
 
 const baselineEnginePids = new Set(windowsProcessIds(packagedEngine))
 const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
+if (process.platform === 'win32') {
+  childEnv.XDG_CONFIG_HOME = path.join(temporaryRoot, 'xdg-config')
+  childEnv.XDG_DATA_HOME = path.join(temporaryRoot, 'xdg-data')
+  childEnv.XDG_CACHE_HOME = path.join(temporaryRoot, 'xdg-cache')
+  childEnv.XDG_STATE_HOME = path.join(temporaryRoot, 'xdg-state')
+}
 if (process.env.WETOCODE_PACKAGED_BINARY) delete childEnv.OPENCODE_BIN
 else childEnv.OPENCODE_BIN = path.join(root, 'node_modules', 'opencode-ai', 'bin', 'opencode.exe')
 const child = spawn(binary, [
