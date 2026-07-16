@@ -890,13 +890,13 @@ async function closeTerminal(ptyId, remove = true) {
   if (!terminal) return false
   activeTerminals.delete(ptyId)
   try { terminal.socket.close() } catch {}
-  if (remove) {
+  const serviceStillUsed = [...activeRuns.values()].some((run) => run.service === terminal.service)
+    || [...activeTerminals.values()].some((active) => active.service === terminal.service)
+  if (remove && (process.platform !== 'win32' || serviceStillUsed)) {
     const removal = terminal.service.client.pty.remove({ ptyID: ptyId }).catch(() => {})
     terminal.service.pendingPtyRemovals.add(removal)
     await removal.finally(() => terminal.service.pendingPtyRemovals.delete(removal))
   }
-  const serviceStillUsed = [...activeRuns.values()].some((run) => run.service === terminal.service)
-    || [...activeTerminals.values()].some((active) => active.service === terminal.service)
   if (!serviceStillUsed) await stopAgentServer(terminal.service)
   return true
 }
@@ -906,12 +906,17 @@ async function stopAgentServer(service) {
     await Promise.allSettled([...agentServers.values()].map((runningService) => stopAgentServer(runningService)))
     return
   }
-  if (agentServers.get(service.signature) === service) agentServers.delete(service.signature)
+  if (service.stopPromise) return service.stopPromise
+  service.stopPromise = stopAgentServerLifecycle(service)
+  return service.stopPromise
+}
+
+async function stopAgentServerLifecycle(service) {
   const terminals = [...activeTerminals.entries()].filter(([, terminal]) => terminal.service === service)
   for (const [ptyId] of terminals) activeTerminals.delete(ptyId)
   const pendingRemovals = [
     ...service.pendingPtyRemovals,
-    ...terminals.map(([ptyId]) => service.client.pty.remove({ ptyID: ptyId }).catch(() => {})),
+    ...(process.platform === 'win32' ? [] : terminals.map(([ptyId]) => service.client.pty.remove({ ptyID: ptyId }).catch(() => {}))),
   ]
   if (pendingRemovals.length) {
     await Promise.race([
@@ -929,6 +934,7 @@ async function stopAgentServer(service) {
   if (!stopped) {
     for (const [, terminal] of terminals) stopProcessTree(terminal.pty.pid)
   }
+  if (agentServers.get(service.signature) === service) agentServers.delete(service.signature)
 }
 
 async function trimAgentServers(limit = 5) {
@@ -955,7 +961,7 @@ async function startAgentProcess(options) {
 async function ensureAgentServer(projectPath, provider, config) {
   const signature = serverSignature(projectPath, provider, config)
   const existing = agentServers.get(signature)
-  if (existing?.child.exitCode === null) {
+  if (existing?.child.exitCode === null && !existing.stopPromise) {
     existing.lastUsed = Date.now()
     return existing
   }
@@ -977,7 +983,7 @@ async function ensureAgentServer(projectPath, provider, config) {
   const service = { ...started, client, controller, signature, projectPath, lastUsed: Date.now(), pendingPtyRemovals: new Set() }
   agentServers.set(signature, service)
   started.child.once('exit', (code, signal) => {
-    if (agentServers.get(signature) === service) agentServers.delete(signature)
+    if (!service.stopPromise && agentServers.get(signature) === service) agentServers.delete(signature)
     for (const run of [...activeRuns.values()].filter((item) => item.service === service)) {
       run.error = `本地执行服务已退出（代码 ${code ?? signal ?? 'unknown'}）。`
       sendToRenderer('agent:event', { runId: run.runId, type: 'error', message: run.error })
