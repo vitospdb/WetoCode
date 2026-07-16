@@ -46,7 +46,7 @@ async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnPro
       if (settled) return
       settled = true
       cleanup()
-      child.kill(process.platform === 'win32' ? 'SIGBREAK' : 'SIGTERM')
+      if (process.platform !== 'win32' || !stopProcessTree(child.pid)) child.kill(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM')
       reject(error)
     }
     const onData = (chunk) => {
@@ -94,9 +94,13 @@ function waitForChildExit(child, timeout) {
 
 async function stopChild(child, { platform = process.platform, killProcessTree = spawnSync } = {}) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return true
-  child.kill(platform === 'win32' ? 'SIGBREAK' : 'SIGTERM')
+  if (platform === 'win32') {
+    if (stopProcessTree(child.pid, { platform, killProcessTree })) return waitForChildExit(child, 3000)
+    child.kill('SIGKILL')
+    return waitForChildExit(child, 3000)
+  }
+  child.kill('SIGTERM')
   if (await waitForChildExit(child, 3000)) return true
-  if (stopProcessTree(child.pid, { platform, killProcessTree })) return waitForChildExit(child, 3000)
   child.kill('SIGKILL')
   return waitForChildExit(child, 3000)
 }

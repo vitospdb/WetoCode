@@ -26,7 +26,7 @@ The terminal is an OpenCode PTY, not a browser emulation. The renderer sends xte
 
 Terminal workspace preferences are stored alongside appearance preferences: height, collapse/maximize state, font size and validated palette overrides. They never contain terminal input or server connection details.
 
-Each OpenCode service binds an ephemeral loopback port. Service subscription, PTY creation, initial resize and connection-token requests have bounded timeouts. A failed startup stops the owning service before returning a Chinese error, while normal Windows shutdown stops the service before closing ConPTY WebSockets to avoid orphaned children.
+Each OpenCode service binds an ephemeral loopback port. Service subscription, PTY creation, initial resize and connection-token requests have bounded timeouts. A failed startup stops the owning service before returning a Chinese error. On Windows, WetoCode terminates the complete service process tree before closing ConPTY WebSockets; this avoids a Bun child outliving a parent process that has already emitted Node's `exit` event.
 
 ## Model Registry
 

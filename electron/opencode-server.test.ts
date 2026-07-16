@@ -51,22 +51,32 @@ describe('OpenCode Server lifecycle', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
   })
 
-  it('uses the Windows process tree fallback only after graceful exit times out', async () => {
+  it('stops the Windows process tree before sending a signal', async () => {
     const child = childProcess()
     child.pid = 42731
-    const killProcessTree = vi.fn().mockReturnValue({ status: 0 })
-    vi.useFakeTimers()
-    const stopping = stopChild(child, { platform: 'win32', killProcessTree })
-    await vi.advanceTimersByTimeAsync(3000)
-    child.signalCode = 'SIGTERM'
-    child.emit('exit', null, 'SIGTERM')
-    await stopping
-    vi.useRealTimers()
-    expect(child.kill).toHaveBeenCalledWith('SIGBREAK')
+    const killProcessTree = vi.fn().mockImplementation(() => {
+      child.signalCode = 'SIGKILL'
+      child.emit('exit', null, 'SIGKILL')
+      return { status: 0 }
+    })
+    await expect(stopChild(child, { platform: 'win32', killProcessTree })).resolves.toBe(true)
+    expect(child.kill).not.toHaveBeenCalled()
     expect(killProcessTree).toHaveBeenCalledWith('taskkill.exe', ['/pid', '42731', '/t', '/f'], {
       windowsHide: true,
       stdio: 'ignore',
     })
+  })
+
+  it('uses a hard signal if Windows process-tree termination fails', async () => {
+    const child = childProcess()
+    child.pid = 42731
+    child.kill.mockImplementation(() => {
+      child.signalCode = 'SIGKILL'
+      child.emit('exit', null, 'SIGKILL')
+    })
+    const killProcessTree = vi.fn().mockReturnValue({ status: 1 })
+    await expect(stopChild(child, { platform: 'win32', killProcessTree })).resolves.toBe(true)
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL')
   })
 
   it('can terminate an orphaned Windows PTY process tree by pid', () => {

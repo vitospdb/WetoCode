@@ -20,7 +20,7 @@ Legend: `done` = implemented; `verified` = passed in this workspace; `pending` =
 | Key storage/redaction | verified | Electron safeStorage boundary and sanitized renderer settings are present. |
 | Five original themes/customization | verified | Weto dark, cloud light, strawberry cream, minimal silver and forest care; colors, terminal palette/size, local background, import/export and restart persistence are implemented. |
 | Beginner first-run flow/environment doctor | verified | Five-step Chinese onboarding and read-only environment doctor passed Electron smoke. |
-| Unit tests | verified | 19 files / 76 tests passed on 2026-07-16. |
+| Unit tests | verified | 19 files / 77 tests passed on 2026-07-16. |
 | Lint and production build | verified | Passed after all changes on 2026-07-16. |
 | Electron terminal UI smoke | verified | Real terminal, IME, paste, shell, resize/maximize, model-center and theme checks passed on 2026-07-16. |
 | Windows desktop build | verified | Native Windows 11 NSIS build produced `WetoCode-Setup-0.2.8-x64.exe`; final rebuild is required after any later source change. |
