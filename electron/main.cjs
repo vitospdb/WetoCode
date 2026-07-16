@@ -17,6 +17,7 @@ const { nextRunAt, normalizeAutomations, normalizeSchedule } = require('./automa
 const { loopbackPreviewUrl, packagePreviewCommands, parsePreviewCommand, urlFromOutput } = require('./preview-tools.cjs')
 const { assertProviderUrl, normalizeBaseUrl, normalizeProviderProtocol, providerPackage, testProviderConnection } = require('./provider-tools.cjs')
 const { normalizeTerminalMode, terminalPtyInput } = require('./terminal-tools.cjs')
+const { createTerminalBrandFilter } = require('./terminal-brand.cjs')
 
 const execFileAsync = promisify(execFile)
 const activeRuns = new Map()
@@ -2155,12 +2156,9 @@ function registerIpc() {
     const mode = normalizeTerminalMode(requestedMode)
     const pty = resultData(await service.client.pty.create(terminalPtyInput({
       mode,
-      runtime: process.execPath,
-      cliScript: path.join(app.getAppPath(), 'electron', 'wetocode-cli.mjs'),
+      binary: findOpenCode(),
       serviceUrl: service.url,
       projectPath,
-      provider,
-      version: app.getVersion(),
     })))
     if (size?.rows && size?.cols) {
       await service.client.pty.update({ ptyID: pty.id, size: { rows: Math.max(2, size.rows), cols: Math.max(20, size.cols) } })
@@ -2174,16 +2172,20 @@ function registerIpc() {
     socketUrl.searchParams.set('directory', projectPath)
     socketUrl.searchParams.set('ticket', token.ticket)
     const socket = new WebSocket(socketUrl, { headers: { Origin: service.url } })
-    const terminal = { pty, socket, service, projectPath, attached: false, buffer: [] }
+    const terminal = { pty, socket, service, projectPath, attached: false, buffer: [], brandFilter: mode === 'cli' ? createTerminalBrandFilter() : undefined }
     activeTerminals.set(pty.id, terminal)
     socket.addEventListener('message', async (message) => {
       if (!activeTerminals.has(pty.id)) return
       const data = await websocketText(message.data)
-      if (terminal.attached) sendToRenderer('terminal:event', { ptyId: pty.id, type: 'data', data })
-      else terminal.buffer.push(data)
+      const output = terminal.brandFilter ? terminal.brandFilter.write(data) : data
+      if (!output) return
+      if (terminal.attached) sendToRenderer('terminal:event', { ptyId: pty.id, type: 'data', data: output })
+      else terminal.buffer.push(output)
     })
     socket.addEventListener('close', () => {
       if (!activeTerminals.delete(pty.id)) return
+      const output = terminal.brandFilter?.flush()
+      if (output) sendToRenderer('terminal:event', { ptyId: pty.id, type: 'data', data: output })
       sendToRenderer('terminal:event', { ptyId: pty.id, type: 'exit', exitCode: terminal.pty.exitCode ?? 0 })
     })
     socket.addEventListener('error', () => {

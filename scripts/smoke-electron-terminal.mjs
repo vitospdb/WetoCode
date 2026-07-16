@@ -104,10 +104,28 @@ try {
   await client.evaluate(`[...document.querySelectorAll('.header-actions button')].find((button) => button.title === '打开终端').click()`)
   await until(client, `document.querySelector('.terminal-toolbar')?.innerText.includes('运行中')`, 'running terminal', 60_000)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent.includes('WetoCode CLI')`, 'embedded CLI mode', 10_000)
-  await until(client, `document.querySelector('.xterm-accessibility-tree')?.innerText.includes('WetoCode >')`, 'WetoCode CLI prompt', 20_000)
-  const cliText = await client.evaluate(`document.querySelector('.xterm-accessibility-tree')?.innerText || ''`)
-  if (/open\s?code/i.test(cliText)) throw new Error(`Upstream branding is visible in WetoCode CLI: ${cliText}`)
   const cliPtyId = await client.evaluate(`document.querySelector('.terminal-panel')?.dataset.ptyId`)
+  await new Promise((resolve) => setTimeout(resolve, 2_000))
+  const cliState = await client.evaluate(`({
+    status: document.querySelector('.terminal-toolbar')?.innerText,
+    text: document.querySelector('.xterm-accessibility-tree')?.innerText || '',
+  })`)
+  if (!cliState.status?.includes('运行中')) throw new Error(`WetoCode CLI exited during startup: ${JSON.stringify(cliState)}`)
+  if (/open\s?code/i.test(cliState.text)) throw new Error(`Upstream branding is visible in WetoCode CLI: ${cliState.text}`)
+  await client.evaluate(`window.wetocode.sendTerminalInput(${JSON.stringify(cliPtyId)}, '只回复 WETOCODE_REAL_TUI_OK\\r')`)
+  const responseDeadline = Date.now() + 90_000
+  let cliText = ''
+  while (Date.now() < responseDeadline) {
+    const tree = await client.send('Accessibility.getFullAXTree')
+    cliText = [
+      tree.nodes.map((node) => node.name?.value || node.value?.value || '').join('\n'),
+      await client.evaluate(`document.querySelector('.xterm-accessibility-tree')?.innerText || ''`),
+    ].join('\n')
+    if (cliText.includes('WETOCODE_REAL_TUI_OK')) break
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  if (!cliText.includes('WETOCODE_REAL_TUI_OK')) throw new Error(`Real attached TUI did not return the model response. ${logs}`)
+  if (/open\s?code/i.test(cliText)) throw new Error(`Upstream branding is visible in WetoCode CLI: ${cliText}`)
   await client.evaluate(`[...document.querySelectorAll('.terminal-mode-switch button')].find((button) => button.textContent === 'Shell').click()`)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent === 'Shell' && document.querySelector('.terminal-toolbar')?.innerText.includes('运行中') && document.querySelector('.terminal-panel')?.dataset.ptyId && document.querySelector('.terminal-panel')?.dataset.ptyId !== ${JSON.stringify(cliPtyId)}`, 'shell mode', 30_000)
   const shellCommand = process.platform === 'win32'
@@ -144,7 +162,7 @@ try {
   }
   await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '关闭终端').click()`)
   await until(client, `!document.querySelector('.terminal-panel')`, 'terminal close', 5_000)
-  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', brandedPrompt: 'WetoCode >', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
+  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', realAttachedTui: true, modelResponse: 'WETOCODE_REAL_TUI_OK', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
 } finally {
   client?.close()
   child.kill('SIGTERM')
