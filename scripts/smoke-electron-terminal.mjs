@@ -188,6 +188,7 @@ async function stopProcessTree() {
 }
 
 let client
+let result
 try {
   client = cdp(await debuggerUrl())
   await until(client, `Boolean(document.querySelector('.app-shell'))`, 'application bootstrap')
@@ -199,7 +200,7 @@ try {
   terminalWorkflow: {
     if (expectedTerminalError) {
       await until(client, `document.querySelector('.toast')?.innerText.includes(${JSON.stringify(expectedTerminalError)}) && document.querySelector('.terminal-toolbar')?.innerText.includes('未连接')`, 'expected Chinese terminal error', 60_000)
-      console.log(JSON.stringify({ ok: true, expectedFailure: expectedTerminalError, terminalStatus: '未连接', cleanup: 'checked-after-exit' }, null, 2))
+      result = { ok: true, expectedFailure: expectedTerminalError, terminalStatus: '未连接', cleanup: 'verified' }
       break terminalWorkflow
     }
   await until(client, `document.querySelector('.terminal-toolbar')?.innerText.includes('运行中')`, 'running terminal', 60_000)
@@ -318,7 +319,7 @@ try {
   const modelCard = await client.evaluate(`document.querySelector('.model-card')?.innerText || ''`)
   if (!modelCard.includes('Mimo') && !modelCard.includes('mimo')) throw new Error(`Configured model is missing from the registry: ${modelCard}`)
   await client.evaluate(`document.querySelector('.detail-panel button[title="关闭"]').click()`)
-  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', localizedTui: true, chineseIme: 'WETOCODE_IME_OK', contextMenu: ['复制', '粘贴'], clipboardPaste: 'WETOCODE_PASTE_OK', terminalWorkspace: ['resize', 'maximize', 'restore'], modelRegistry: 'configured-model-visible', theme: 'strawberry-cream', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
+  result = { ok: true, terminalPanel: true, defaultMode: 'cli', localizedTui: true, chineseIme: 'WETOCODE_IME_OK', contextMenu: ['复制', '粘贴'], clipboardPaste: 'WETOCODE_PASTE_OK', terminalWorkspace: ['resize', 'maximize', 'restore'], modelRegistry: 'configured-model-visible', theme: 'strawberry-cream', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }
   }
 } finally {
   await client?.evaluate('window.close()').catch(() => {})
@@ -340,3 +341,4 @@ try {
   }
   await fs.rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
 }
+console.log(JSON.stringify(result, null, 2))
