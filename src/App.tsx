@@ -1530,7 +1530,7 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
   }, [generation, mode, onError, project.path, terminalReady])
 
   return (
-    <section className="terminal-panel" aria-label="集成终端" data-pty-id={info?.id}>
+    <section className="terminal-panel" aria-label="集成终端" data-pty-id={info?.id} data-pty-pid={info?.pid}>
       <div className="terminal-toolbar">
         <div><TerminalSquare size={14} /><b>终端</b><button className="terminal-resize-handle" title="拖拽调整终端高度，双击最大化或恢复" aria-label="调整终端高度" onPointerDown={beginResize} onDoubleClick={onToggleMaximized} /><div className="terminal-mode-switch"><button className={mode === 'cli' ? 'active' : ''} disabled={starting} onClick={() => setMode('cli')}>WetoCode CLI</button><button className={mode === 'shell' ? 'active' : ''} disabled={starting} onClick={() => setMode('shell')}>Shell</button></div><span>{starting ? '正在启动' : info ? `${info.status === 'running' ? '运行中' : `已退出 ${info.exitCode ?? ''}`}` : '未连接'}</span></div>
         <div><button className="icon-btn" title="从剪贴板粘贴" onClick={pasteFromClipboard}><ClipboardPaste size={14} /></button><button className="icon-btn" title={settings.collapsed ? '展开终端' : '折叠终端'} onClick={onToggleCollapsed}>{settings.collapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button><button className="icon-btn" title={settings.maximized ? '恢复终端尺寸' : '终端占满工作区'} onClick={onToggleMaximized}>{settings.maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button><button className="icon-btn" title="重新启动终端" disabled={starting} onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={14} /></button><button className="icon-btn" title="关闭终端" onClick={onClose}><X size={15} /></button></div>

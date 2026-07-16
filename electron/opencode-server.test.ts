@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { startOpencodeServer, stopChild } = require('./opencode-server.cjs')
+const { startOpencodeServer, stopChild, stopProcessTree } = require('./opencode-server.cjs')
 
 function childProcess() {
   const child = new EventEmitter() as EventEmitter & {
@@ -49,5 +49,14 @@ describe('OpenCode Server lifecycle', () => {
       stdio: 'ignore',
     })
     expect(child.kill).not.toHaveBeenCalled()
+  })
+
+  it('can terminate an orphaned Windows PTY process tree by pid', () => {
+    const killProcessTree = vi.fn().mockReturnValue({ status: 0 })
+    expect(stopProcessTree(42732, { platform: 'win32', killProcessTree })).toBe(true)
+    expect(killProcessTree).toHaveBeenCalledWith('taskkill.exe', ['/pid', '42732', '/t', '/f'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    })
   })
 })

@@ -10,7 +10,7 @@ const { normalizeAccessMode, permissionForAccessMode } = require('./access-mode.
 const { enrichSessions, normalizeSessionMetadata, updateSessionMetadata } = require('./session-metadata.cjs')
 const { DEFAULT_APPEARANCE, normalizeAppearance, updateAppearance } = require('./appearance.cjs')
 const { countDiffLines, isSafeRelativePath, parseGitStatus } = require('./git-tools.cjs')
-const { startOpencodeServer, stopChild } = require('./opencode-server.cjs')
+const { startOpencodeServer, stopChild, stopProcessTree } = require('./opencode-server.cjs')
 const { MAX_ATTACHMENTS_BYTES, readAttachmentFile, readDataAttachment } = require('./attachment-tools.cjs')
 const { createGoalState, goalBudgetReason, normalizeGoals, updateGoalState } = require('./goal-state.cjs')
 const { emptyUsage, normalizeUsage, recordUsage, usageSummary } = require('./usage-stats.cjs')
@@ -894,6 +894,7 @@ async function closeTerminal(ptyId, remove = true) {
     const removal = terminal.service.client.pty.remove({ ptyID: ptyId }).catch(() => {})
     terminal.service.pendingPtyRemovals.add(removal)
     await removal.finally(() => terminal.service.pendingPtyRemovals.delete(removal))
+    stopProcessTree(terminal.pty.pid)
   }
   return true
 }
@@ -919,6 +920,7 @@ async function stopAgentServer(service) {
   for (const [ptyId, terminal] of terminals) {
     activeTerminals.delete(ptyId)
     try { terminal.socket.close() } catch {}
+    stopProcessTree(terminal.pty.pid)
     sendToRenderer('terminal:event', { ptyId, type: 'exit', exitCode: -1 })
   }
   service.controller.abort()

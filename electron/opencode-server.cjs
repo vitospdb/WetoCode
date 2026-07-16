@@ -43,15 +43,18 @@ function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnProcess =
   })
 }
 
+function stopProcessTree(pid, { platform = process.platform, killProcessTree = spawnSync } = {}) {
+  if (platform !== 'win32' || !Number.isInteger(pid)) return false
+  const result = killProcessTree('taskkill.exe', ['/pid', String(pid), '/t', '/f'], {
+    windowsHide: true,
+    stdio: 'ignore',
+  })
+  return !result?.error && result?.status === 0
+}
+
 function stopChild(child, { platform = process.platform, killProcessTree = spawnSync } = {}) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return
-  if (platform === 'win32' && Number.isInteger(child.pid)) {
-    const result = killProcessTree('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
-      windowsHide: true,
-      stdio: 'ignore',
-    })
-    if (!result?.error && result?.status === 0) return
-  }
+  if (stopProcessTree(child.pid, { platform, killProcessTree })) return
   child.kill('SIGTERM')
   const timer = setTimeout(() => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
@@ -59,4 +62,4 @@ function stopChild(child, { platform = process.platform, killProcessTree = spawn
   timer.unref()
 }
 
-module.exports = { startOpencodeServer, stopChild }
+module.exports = { startOpencodeServer, stopChild, stopProcessTree }

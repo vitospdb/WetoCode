@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -20,6 +20,27 @@ await fs.writeFile(path.join(userData, 'settings.json'), JSON.stringify({
 }, null, 2))
 
 const binary = process.env.WETOCODE_PACKAGED_BINARY || path.join(root, 'node_modules', 'electron', 'dist', 'electron')
+const packagedEngine = process.env.WETOCODE_PACKAGED_BINARY
+  ? path.join(path.dirname(binary), 'resources', 'bin', 'opencode.exe')
+  : undefined
+const ptyPids = new Set()
+
+function windowsProcessIds(executable) {
+  if (process.platform !== 'win32' || !executable) return []
+  const escaped = executable.replaceAll("'", "''")
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', `$path='${escaped}'; @(Get-Process -Name opencode -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited -and $_.Path -eq $path } | Select-Object -ExpandProperty Id) | ConvertTo-Json -Compress`], { encoding: 'utf8', windowsHide: true })
+  if (result.status !== 0 || !result.stdout.trim()) return []
+  const value = JSON.parse(result.stdout)
+  return Array.isArray(value) ? value.map(Number) : [Number(value)]
+}
+
+function windowsProcessIsRunning(pid) {
+  if (process.platform !== 'win32' || !Number.isInteger(pid)) return false
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', `$process=Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if($process -and -not $process.HasExited){'running'}`], { encoding: 'utf8', windowsHide: true })
+  return result.stdout.trim() === 'running'
+}
+
+const baselineEnginePids = new Set(windowsProcessIds(packagedEngine))
 const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
 if (process.env.WETOCODE_PACKAGED_BINARY) delete childEnv.OPENCODE_BIN
 else childEnv.OPENCODE_BIN = path.join(root, 'node_modules', 'opencode-ai', 'bin', 'opencode.exe')
@@ -163,6 +184,8 @@ try {
   await until(client, `document.querySelector('.terminal-toolbar')?.innerText.includes('运行中')`, 'running terminal', 60_000)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent.includes('WetoCode CLI')`, 'embedded CLI mode', 10_000)
   const cliPtyId = await client.evaluate(`document.querySelector('.terminal-panel')?.dataset.ptyId`)
+  const cliPtyPid = await client.evaluate(`Number(document.querySelector('.terminal-panel')?.dataset.ptyPid) || 0`)
+  if (cliPtyPid) ptyPids.add(cliPtyPid)
   const initialTerminalHeight = await client.evaluate(`document.querySelector('.terminal-panel')?.getBoundingClientRect().height || 0`)
   if (initialTerminalHeight < 200) throw new Error(`Terminal panel did not receive a usable workspace height: ${initialTerminalHeight}`)
   await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '终端占满工作区').click()`)
@@ -222,6 +245,8 @@ try {
 
   await client.evaluate(`[...document.querySelectorAll('.terminal-mode-switch button')].find((button) => button.textContent === 'Shell').click()`)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent === 'Shell' && document.querySelector('.terminal-toolbar')?.innerText.includes('运行中') && document.querySelector('.terminal-panel')?.dataset.ptyId && document.querySelector('.terminal-panel')?.dataset.ptyId !== ${JSON.stringify(cliPtyId)}`, 'shell mode', 30_000)
+  const shellPtyPid = await client.evaluate(`Number(document.querySelector('.terminal-panel')?.dataset.ptyPid) || 0`)
+  if (shellPtyPid) ptyPids.add(shellPtyPid)
   const shellCommand = process.platform === 'win32'
     ? `Set-Content -Path terminal-ui-result.txt -Value 'WETOCODE_TERMINAL_UI_OK'\r`
     : `printf 'WETOCODE_TERMINAL_UI_OK\\n' | tee terminal-ui-result.txt\r`
@@ -277,5 +302,19 @@ try {
   await client?.evaluate('window.close()').catch(() => {})
   client?.close()
   if (!await waitForExit()) await stopProcessTree()
+  if (process.platform === 'win32') {
+    const deadline = Date.now() + 10_000
+    let runningPtyPids = []
+    let newEnginePids = []
+    do {
+      runningPtyPids = [...ptyPids].filter(windowsProcessIsRunning)
+      newEnginePids = windowsProcessIds(packagedEngine).filter((pid) => !baselineEnginePids.has(pid))
+      if (!runningPtyPids.length && !newEnginePids.length) break
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    } while (Date.now() < deadline)
+    if (runningPtyPids.length || newEnginePids.length) {
+      throw new Error(`Windows child processes remained after exit: ${JSON.stringify({ runningPtyPids, newEnginePids })}`)
+    }
+  }
   await fs.rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
 }
