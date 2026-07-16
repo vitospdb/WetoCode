@@ -894,7 +894,6 @@ async function closeTerminal(ptyId, remove = true) {
     const removal = terminal.service.client.pty.remove({ ptyID: ptyId }).catch(() => {})
     terminal.service.pendingPtyRemovals.add(removal)
     await removal.finally(() => terminal.service.pendingPtyRemovals.delete(removal))
-    stopProcessTree(terminal.pty.pid)
   }
   return true
 }
@@ -920,11 +919,17 @@ async function stopAgentServer(service) {
   for (const [ptyId, terminal] of terminals) {
     activeTerminals.delete(ptyId)
     try { terminal.socket.close() } catch {}
-    stopProcessTree(terminal.pty.pid)
     sendToRenderer('terminal:event', { ptyId, type: 'exit', exitCode: -1 })
   }
   service.controller.abort()
-  stopChild(service.child)
+  await Promise.race([
+    service.client.global.dispose().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 3000)),
+  ])
+  const stopped = await stopChild(service.child)
+  if (!stopped) {
+    for (const [, terminal] of terminals) stopProcessTree(terminal.pty.pid)
+  }
 }
 
 async function trimAgentServers(limit = 5) {

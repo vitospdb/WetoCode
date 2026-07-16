@@ -1,7 +1,21 @@
 const { spawn, spawnSync } = require('node:child_process')
+const net = require('node:net')
 
-function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnProcess = spawn }) {
-  const child = spawnProcess(binary, ['serve', '--hostname=127.0.0.1', '--port=0'], {
+function availableLoopbackPort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.unref()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      server.close((error) => error ? reject(error) : resolve(address.port))
+    })
+  })
+}
+
+async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnProcess = spawn, getPort = availableLoopbackPort }) {
+  const port = await getPort()
+  const child = spawnProcess(binary, ['serve', '--hostname=127.0.0.1', `--port=${port}`], {
     cwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -52,14 +66,28 @@ function stopProcessTree(pid, { platform = process.platform, killProcessTree = s
   return !result?.error && result?.status === 0
 }
 
-function stopChild(child, { platform = process.platform, killProcessTree = spawnSync } = {}) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return
-  if (stopProcessTree(child.pid, { platform, killProcessTree })) return
-  child.kill('SIGTERM')
-  const timer = setTimeout(() => {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-  }, 3000)
-  timer.unref()
+function waitForChildExit(child, timeout) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.removeListener('exit', onExit)
+      resolve(false)
+    }, timeout)
+    const onExit = () => {
+      clearTimeout(timer)
+      resolve(true)
+    }
+    child.once('exit', onExit)
+  })
 }
 
-module.exports = { startOpencodeServer, stopChild, stopProcessTree }
+async function stopChild(child, { platform = process.platform, killProcessTree = spawnSync } = {}) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return true
+  child.kill('SIGTERM')
+  if (await waitForChildExit(child, 3000)) return true
+  if (stopProcessTree(child.pid, { platform, killProcessTree })) return waitForChildExit(child, 3000)
+  child.kill('SIGKILL')
+  return waitForChildExit(child, 3000)
+}
+
+module.exports = { availableLoopbackPort, startOpencodeServer, stopChild, stopProcessTree, waitForChildExit }

@@ -28,7 +28,7 @@ const ptyPids = new Set()
 function windowsProcessIds(executable) {
   if (process.platform !== 'win32' || !executable) return []
   const escaped = executable.replaceAll("'", "''")
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', `$path='${escaped}'; @(Get-Process -Name opencode -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited -and $_.Path -eq $path } | Select-Object -ExpandProperty Id) | ConvertTo-Json -Compress`], { encoding: 'utf8', windowsHide: true })
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', `$path='${escaped}'; @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $path } | Select-Object -ExpandProperty ProcessId) | ConvertTo-Json -Compress`], { encoding: 'utf8', windowsHide: true })
   if (result.status !== 0 || !result.stdout.trim()) return []
   const value = JSON.parse(result.stdout)
   return Array.isArray(value) ? value.map(Number) : [Number(value)]
@@ -36,7 +36,7 @@ function windowsProcessIds(executable) {
 
 function windowsProcessIsRunning(pid) {
   if (process.platform !== 'win32' || !Number.isInteger(pid)) return false
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', `$process=Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if($process -and -not $process.HasExited){'running'}`], { encoding: 'utf8', windowsHide: true })
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', `if(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}'){'running'}`], { encoding: 'utf8', windowsHide: true })
   return result.stdout.trim() === 'running'
 }
 
