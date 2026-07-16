@@ -1721,13 +1721,14 @@ function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings,
             {bootstrap.settings.providers.map((provider) => (
               <div className={`provider-row ${activeProvider?.id === provider.id ? 'active' : ''}`} key={provider.id}>
                 <button className="provider-main" onClick={() => void onProviderChange(provider.id)}>
-                  <span className="provider-mark">{provider.name.slice(0, 1)}</span><span><b>{provider.name}</b><small>{provider.model}</small></span>
+                  <span className="provider-mark">{provider.name.slice(0, 1)}</span><span><b>{provider.name}</b><small>{provider.id === 'wetocode-free' ? `${provider.model} · 第三方公共试用额度` : provider.model}</small></span>
                   {activeProvider?.id === provider.id && <CheckCircle2 size={16} />}
                 </button>
                 {provider.id !== 'wetocode-free' && <button className="provider-edit" title="编辑" onClick={() => editProvider(provider)}><PencilLine size={14} /></button>}
               </div>
             ))}
           </div>
+          <p className="provider-note">公共免费模型无需你的个人密钥，试用额度由第三方按公网 IP 统计；同一网络下的用户可能共享限额，服务也可能限流或调整。其他模型使用各自用户配置的 API Key。</p>
           <button className="preset-toggle" onClick={() => editProvider()}><Plus size={15} />接入其他模型或内网网关</button>
         </section>
 

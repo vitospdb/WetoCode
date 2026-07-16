@@ -1,6 +1,6 @@
 {
   "name": "wetocode",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "更符合中国开发者使用习惯的中文桌面 Coding Agent",
   "main": "electron/main.cjs",
@@ -28,6 +28,7 @@
     "smoke:electron-permission": "node scripts/smoke-electron-permission.mjs",
     "smoke:pty": "node scripts/smoke-opencode-pty.mjs",
     "smoke:electron-terminal": "node scripts/smoke-electron-terminal.mjs",
+    "smoke:cli": "node scripts/smoke-wetocode-cli.mjs",
     "smoke:worktree": "node scripts/smoke-opencode-worktree.mjs",
     "smoke:electron-worktree": "node scripts/smoke-electron-worktree.mjs",
     "smoke:electron-attachment": "node scripts/smoke-electron-attachment.mjs",

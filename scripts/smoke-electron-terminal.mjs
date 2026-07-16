@@ -104,6 +104,9 @@ try {
   await client.evaluate(`[...document.querySelectorAll('.header-actions button')].find((button) => button.title === '打开终端').click()`)
   await until(client, `document.querySelector('.terminal-toolbar')?.innerText.includes('运行中')`, 'running terminal', 60_000)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent.includes('WetoCode CLI')`, 'embedded CLI mode', 10_000)
+  await until(client, `document.querySelector('.xterm-accessibility-tree')?.innerText.includes('WetoCode >')`, 'WetoCode CLI prompt', 20_000)
+  const cliText = await client.evaluate(`document.querySelector('.xterm-accessibility-tree')?.innerText || ''`)
+  if (/open\s?code/i.test(cliText)) throw new Error(`Upstream branding is visible in WetoCode CLI: ${cliText}`)
   const cliPtyId = await client.evaluate(`document.querySelector('.terminal-panel')?.dataset.ptyId`)
   await client.evaluate(`[...document.querySelectorAll('.terminal-mode-switch button')].find((button) => button.textContent === 'Shell').click()`)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent === 'Shell' && document.querySelector('.terminal-toolbar')?.innerText.includes('运行中') && document.querySelector('.terminal-panel')?.dataset.ptyId && document.querySelector('.terminal-panel')?.dataset.ptyId !== ${JSON.stringify(cliPtyId)}`, 'shell mode', 30_000)
@@ -141,7 +144,7 @@ try {
   }
   await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '关闭终端').click()`)
   await until(client, `!document.querySelector('.terminal-panel')`, 'terminal close', 5_000)
-  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
+  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', brandedPrompt: 'WetoCode >', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
 } finally {
   client?.close()
   child.kill('SIGTERM')

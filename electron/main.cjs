@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS = {
   providers: [
     {
       id: 'wetocode-free',
-      name: 'WetoCode 免费模型',
+      name: '公共免费模型',
       providerId: 'opencode',
       model: 'mimo-v2.5-free',
       baseUrl: '',
@@ -226,6 +226,7 @@ function readSettings() {
       providers: Array.isArray(saved.providers) && saved.providers.length
         ? saved.providers.map((provider) => ({
             ...provider,
+            name: provider.id === 'wetocode-free' ? '公共免费模型' : provider.name,
             protocol: normalizeProviderProtocol(provider.protocol, provider.providerId),
           }))
         : DEFAULT_SETTINGS.providers,
@@ -2154,9 +2155,12 @@ function registerIpc() {
     const mode = normalizeTerminalMode(requestedMode)
     const pty = resultData(await service.client.pty.create(terminalPtyInput({
       mode,
-      binary: findOpenCode(),
+      runtime: process.execPath,
+      cliScript: path.join(app.getAppPath(), 'electron', 'wetocode-cli.mjs'),
       serviceUrl: service.url,
       projectPath,
+      provider,
+      version: app.getVersion(),
     })))
     if (size?.rows && size?.cols) {
       await service.client.pty.update({ ptyID: pty.id, size: { rows: Math.max(2, size.rows), cols: Math.max(20, size.cols) } })

@@ -3,7 +3,7 @@ import type { WetoCodeBridge, BootstrapData, ProviderSettings } from './types'
 const providers: ProviderSettings[] = [
   {
     id: 'wetocode-free',
-    name: 'WetoCode 免费模型',
+    name: '公共免费模型',
     providerId: 'opencode',
     model: 'mimo-v2.5-free',
     baseUrl: '',
