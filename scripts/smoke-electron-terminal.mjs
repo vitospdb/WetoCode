@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,7 +9,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wetocode-terminal-ui-'))
 const userData = path.join(temporaryRoot, 'user-data')
 const projectPath = path.join(temporaryRoot, 'project')
-const port = 9820 + Math.floor(Math.random() * 120)
+const port = await new Promise((resolve, reject) => {
+  const server = net.createServer()
+  server.once('error', reject)
+  server.listen(0, '127.0.0.1', () => {
+    const address = server.address()
+    server.close((error) => error ? reject(error) : resolve(address.port))
+  })
+})
 await fs.mkdir(userData, { recursive: true })
 await fs.mkdir(projectPath)
 await fs.mkdir(path.join(userData, 'rules'), { recursive: true })
