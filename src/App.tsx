@@ -15,10 +15,10 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ClipboardPaste,
   CircleStop,
   Code2,
   Command,
-  Database,
   FileCode2,
   FileMinus2,
   FilePenLine,
@@ -34,14 +34,19 @@ import {
   GitBranch,
   GitCompare,
   History,
+  Heart,
+  Image,
+  Leaf,
   KeyRound,
   LoaderCircle,
   ListTodo,
   Menu,
+  Maximize2,
   MessageSquareText,
   Monitor,
   Moon,
   MoreHorizontal,
+  Minimize2,
   Paperclip,
   PanelRightClose,
   PencilLine,
@@ -58,6 +63,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Star,
   Sun,
   TerminalSquare,
   Trash2,
@@ -84,6 +90,7 @@ import type {
   AgentCommandInfo,
   ChatMessage,
   ComposerAttachment,
+  EnvironmentReport,
   GitDiffInfo,
   GitFileChange,
   GitStatusInfo,
@@ -99,6 +106,8 @@ import type {
   ToolActivity,
   TerminalEvent,
   TerminalInfo,
+  ModelRegistryResult,
+  RegistryModel,
   UpdateEvent,
   UsageSummary,
   WorktreeInfo,
@@ -108,10 +117,12 @@ import type {
 const bridge = window.wetocode ?? mockBridge
 
 const starterTasks = [
-  { icon: FileSearch, label: '审查当前项目', prompt: '请审查当前项目，找出最值得优先处理的三个问题，重点关注安全、数据一致性和可维护性。' },
-  { icon: ShieldCheck, label: '检查敏感数据风险', prompt: '请检查项目中可能泄露客户敏感信息、密钥或凭证的风险，并给出可验证的修复建议。' },
-  { icon: Database, label: '评估数据库变更', prompt: '请检查数据库相关代码和迁移，评估金额精度、事务、幂等、兼容发布和回滚风险。' },
-  { icon: FileCode2, label: '补充测试', prompt: '请分析当前项目的测试缺口，优先为高风险业务路径补充最有价值的测试并运行验证。' },
+  { icon: Rocket, label: '从一句话创建应用', prompt: '我想从一句话开始创建一个应用。请先用容易理解的问题确认目标、使用场景和必须功能，再检查当前目录并开始搭建。' },
+  { icon: FilePlus2, label: '搭建一个网页', prompt: '请帮我搭建一个可以直接运行的网页。先检查当前项目技术栈，再完成页面、交互和运行验证。' },
+  { icon: FilePenLine, label: '修改现有代码', prompt: '请先理解当前项目，然后询问我想修改的功能；确认后直接实现并运行相关验证。' },
+  { icon: AlertTriangle, label: '分析报错', prompt: '请帮我分析当前项目的报错。先读取相关日志和代码，用中文解释原因，再修复并验证。' },
+  { icon: Workflow, label: '安装运行环境', prompt: '请检查这个项目需要的运行环境和依赖，用中文说明缺少什么；任何系统级安装或 PATH 修改前必须先征得我的确认。' },
+  { icon: FileSearch, label: '了解这个项目', prompt: '请用小白能理解的中文介绍这个项目：它能做什么、如何运行、主要目录是什么，以及下一步可以从哪里开始。' },
 ]
 
 const providerPresets = [
@@ -259,7 +270,7 @@ function App() {
   const [prompt, setPrompt] = useState('')
   const [activeRunId, setActiveRunId] = useState<string>()
   const [runSessionId, setRunSessionId] = useState<string>()
-  const [panel, setPanel] = useState<'none' | 'settings' | 'context' | 'changes' | 'tasks' | 'files' | 'extensions' | 'usage' | 'automations'>('none')
+  const [panel, setPanel] = useState<'none' | 'settings' | 'models' | 'context' | 'changes' | 'tasks' | 'files' | 'extensions' | 'usage' | 'automations'>('none')
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [toast, setToast] = useState<string>()
@@ -279,6 +290,7 @@ function App() {
   const [permissionRequest, setPermissionRequest] = useState<AgentPermissionRequest>()
   const [permissionBusy, setPermissionBusy] = useState(false)
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const [terminalHeight, setTerminalHeight] = useState<number>()
   const [worktreeState, setWorktreeState] = useState<WorktreeState>()
   const [worktreeMenuOpen, setWorktreeMenuOpen] = useState(false)
   const [worktreeDialog, setWorktreeDialog] = useState<{ type: 'create' } | { type: 'remove' | 'reset'; worktree: WorktreeInfo }>()
@@ -294,12 +306,18 @@ function App() {
   const [automations, setAutomations] = useState<AutomationTask[]>([])
   const [previewOpen, setPreviewOpen] = useState(false)
   const [preview, setPreview] = useState<PreviewState | null>(null)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
+  const [onboardingStep, setOnboardingStep] = useState(0)
+  const [environmentReport, setEnvironmentReport] = useState<EnvironmentReport>()
+  const [doctorBusy, setDoctorBusy] = useState(false)
   const messagesRef = useRef<HTMLDivElement>(null)
+  const persistedTerminalHeight = bootstrap?.settings.appearance.terminal.height
 
   useEffect(() => {
     bridge.getBootstrap().then(async (data) => {
       setBootstrap(data)
       setSidebarOpen(data.settings.appearance.sidebarOpen)
+      if (!data.settings.onboardingCompleted && !data.settings.recentProjects.length) setOnboardingOpen(true)
       void bridge.getEngineStatus().then((engine) => {
         setBootstrap((current) => current ? { ...current, engine } : current)
         if (!engine.installed) setToast('本地执行引擎未就绪，请重新安装 WetoCode。')
@@ -325,6 +343,10 @@ function App() {
       }
     }).catch((error: Error) => setToast(error.message))
   }, [])
+
+  useEffect(() => {
+    if (persistedTerminalHeight) setTerminalHeight(persistedTerminalHeight)
+  }, [persistedTerminalHeight])
 
   useEffect(() => {
     if (!project) return
@@ -430,7 +452,7 @@ function App() {
 
   async function chooseProject() {
     const selection = await bridge.chooseProject()
-    if (!selection) return
+    if (!selection) return false
     detachCurrentTask()
     setProject({ path: selection.path, name: selection.name })
     setPreviewOpen(false)
@@ -448,6 +470,7 @@ function App() {
         recentProjects: [selection.path, ...current.settings.recentProjects.filter((item) => item !== selection.path)],
       },
     } : current)
+    return true
   }
 
   function openRecent(projectPath: string) {
@@ -762,6 +785,32 @@ function App() {
     }
   }
 
+  async function changeTerminalAppearance(terminal: Partial<AppearanceSettings['terminal']>) {
+    if (!bootstrap) return
+    await changeAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, ...terminal } })
+  }
+
+  async function runEnvironmentDoctor() {
+    setDoctorBusy(true)
+    try {
+      setEnvironmentReport(await bridge.getEnvironmentDoctor(project?.path))
+    } catch (error) {
+      setToast((error as Error).message)
+    } finally {
+      setDoctorBusy(false)
+    }
+  }
+
+  async function finishOnboarding(firstPrompt?: string) {
+    try {
+      updateSettings(await bridge.setOnboardingCompleted(true))
+      if (firstPrompt?.trim()) setPrompt(firstPrompt.trim())
+      setOnboardingOpen(false)
+    } catch (error) {
+      setToast((error as Error).message)
+    }
+  }
+
   async function changeActiveProvider(providerId: string) {
     if (activeRunId || switchingProvider) return
     if (providerId === activeProvider?.id) {
@@ -845,8 +894,22 @@ function App() {
     return <div className="app-loading"><div className="brand-mark large">W</div><LoaderCircle className="spin" size={22} /><span>正在启动 WetoCode...</span></div>
   }
 
+  const terminalSettings = bootstrap.settings.appearance.terminal
+  const customAppearance = bootstrap.settings.appearance.custom
+  const activeTerminalHeight = terminalHeight ?? terminalSettings.height
+  const appStyle = {
+    '--terminal-height': `${activeTerminalHeight}px`,
+    '--green': customAppearance.accent || undefined,
+    '--green-dark': customAppearance.accent || undefined,
+    '--bg': customAppearance.background || undefined,
+    '--surface': customAppearance.surface ? `color-mix(in srgb, ${customAppearance.surface} ${customAppearance.transparency}%, transparent)` : undefined,
+    '--custom-radius': `${customAppearance.radius}px`,
+    '--shadow-strength': `${customAppearance.shadow}`,
+    '--background-image': customAppearance.backgroundImage ? `url("${customAppearance.backgroundImage.replaceAll('"', '%22')}")` : undefined,
+  } as React.CSSProperties
+
   return (
-    <div className={`app-shell ${sidebarOpen ? '' : 'sidebar-collapsed'} ${panel !== 'none' ? 'panel-open' : ''} ${panel === 'changes' || panel === 'files' ? 'changes-open' : ''}`} data-theme={bootstrap.settings.appearance.theme} data-density={bootstrap.settings.appearance.density}>
+    <div className={`app-shell ${sidebarOpen ? '' : 'sidebar-collapsed'} ${panel !== 'none' ? 'panel-open' : ''} ${panel === 'changes' || panel === 'files' ? 'changes-open' : ''} ${customAppearance.animations ? '' : 'reduce-motion'}`} data-theme={bootstrap.settings.appearance.theme} data-density={bootstrap.settings.appearance.density} style={appStyle}>
       <header className="titlebar">
         <div className="brand"><div className="brand-mark">W</div><div><strong>WetoCode</strong><span>中文桌面 Coding Agent</span></div></div>
         <div className="project-switcher">
@@ -868,6 +931,7 @@ function App() {
           <button className={`icon-btn ${previewOpen ? 'active' : ''}`} title="开发预览" disabled={!project} onClick={() => { setPreviewOpen((open) => !open); setTerminalOpen(false) }}><Monitor size={18} /></button>
           <button className={`icon-btn ${panel === 'files' ? 'active' : ''}`} title="项目文件" disabled={!project} onClick={() => setPanel(panel === 'files' ? 'none' : 'files')}><FolderTree size={18} /></button>
           <button className={`icon-btn ${panel === 'extensions' ? 'active' : ''}`} title="扩展中心" disabled={!project} onClick={() => setPanel(panel === 'extensions' ? 'none' : 'extensions')}><Plug size={18} /></button>
+          <button className={`icon-btn ${panel === 'models' ? 'active' : ''}`} title="模型中心" onClick={() => setPanel(panel === 'models' ? 'none' : 'models')}><Sparkles size={18} /></button>
           <button className={`icon-btn automation-button ${panel === 'automations' ? 'active' : ''}`} title="自动化任务" onClick={() => setPanel(panel === 'automations' ? 'none' : 'automations')}><CalendarClock size={18} />{enabledAutomationCount ? <span>{enabledAutomationCount > 9 ? '9+' : enabledAutomationCount}</span> : null}</button>
           <button className={`icon-btn ${panel === 'usage' ? 'active' : ''}`} title="使用统计" onClick={() => setPanel(panel === 'usage' ? 'none' : 'usage')}><Activity size={18} /></button>
           <button className={`icon-btn tasks-button ${panel === 'tasks' ? 'active' : ''}`} title="后台任务" onClick={() => setPanel(panel === 'tasks' ? 'none' : 'tasks')}>
@@ -931,7 +995,10 @@ function App() {
 
       {!sidebarOpen && <button className="floating-sidebar-toggle" title="展开侧栏" onClick={() => void setSidebarVisibility(true)}><Menu size={18} /></button>}
 
-      <main className={`workspace ${terminalOpen && project && !previewOpen ? 'terminal-open' : ''} ${previewOpen ? 'preview-open' : ''}`}>
+      <main
+        className={`workspace ${terminalOpen && project && !previewOpen ? 'terminal-open' : ''} ${terminalOpen && terminalSettings.maximized && !previewOpen ? 'terminal-maximized' : ''} ${terminalOpen && terminalSettings.collapsed && !previewOpen ? 'terminal-collapsed' : ''} ${previewOpen ? 'preview-open' : ''}`}
+        style={{ '--terminal-height': `${activeTerminalHeight}px` } as React.CSSProperties}
+      >
         <div className="workspace-head">
           <div>
             <h1>{previewOpen ? '开发预览' : activeSessionId ? sessions.find((item) => item.id === activeSessionId)?.title : messages.length ? '当前任务' : '准备开始'}</h1>
@@ -946,7 +1013,7 @@ function App() {
               {switchingProvider ? <LoaderCircle className="spin" size={15} /> : <ChevronDown size={15} />}
             </button>
             {modelMenuOpen && <div className="model-menu" role="menu">
-              <div className="model-menu-head"><span>选择任务模型</span><button title="管理模型" onClick={() => { setModelMenuOpen(false); setPanel('settings') }}><Settings size={14} /></button></div>
+              <div className="model-menu-head"><span>选择任务模型</span><button title="打开模型中心" onClick={() => { setModelMenuOpen(false); setPanel('models') }}><Sparkles size={14} /></button></div>
               {bootstrap.settings.providers.map((provider) => <button key={provider.id} className={provider.id === activeProvider?.id ? 'active' : ''} onClick={() => void changeActiveProvider(provider.id)}>
                 <span className="provider-mark">{provider.name.slice(0, 1)}</span><span><b>{provider.name}</b><small>{provider.model}</small></span>{provider.id === activeProvider?.id && <Check size={14} />}
               </button>)}
@@ -954,7 +1021,20 @@ function App() {
           </div>}
         </div>
 
-        {terminalOpen && project && !previewOpen && <TerminalPanel key={project.path} project={project} theme={bootstrap.settings.appearance.theme} onClose={() => setTerminalOpen(false)} onError={setToast} />}
+        {terminalOpen && project && !previewOpen && <TerminalPanel
+          key={project.path}
+          project={project}
+          theme={bootstrap.settings.appearance.theme}
+          settings={terminalSettings}
+          custom={customAppearance}
+          height={activeTerminalHeight}
+          onHeightChange={setTerminalHeight}
+          onHeightCommit={(height) => void changeTerminalAppearance({ height })}
+          onToggleMaximized={() => void changeTerminalAppearance({ maximized: !terminalSettings.maximized, collapsed: false })}
+          onToggleCollapsed={() => void changeTerminalAppearance({ collapsed: !terminalSettings.collapsed, maximized: false })}
+          onClose={() => setTerminalOpen(false)}
+          onError={setToast}
+        />}
 
         {previewOpen && project ? <PreviewWorkspace project={project} preview={preview} onPreview={setPreview} onError={setToast} /> : <div className="messages" ref={messagesRef}>
           {!project ? <NoProject onChoose={chooseProject} /> : !messages.length ? (
@@ -1052,6 +1132,8 @@ function App() {
         <aside className="detail-panel">
           {panel === 'settings' ? (
             <SettingsPanel bootstrap={bootstrap} activeProvider={activeProvider} update={update} onClose={() => setPanel('none')} onSettings={updateSettings} onAppearance={changeAppearance} onProviderChange={changeActiveProvider} />
+          ) : panel === 'models' ? (
+            <ModelCenterPanel project={project} activeProvider={activeProvider} onSettings={updateSettings} onConfigure={() => setPanel('settings')} onError={setToast} onClose={() => setPanel('none')} />
           ) : panel === 'context' ? (
             <ContextPanel settings={bootstrap.settings} provider={activeProvider} tokenTotal={tokenTotal} percent={contextPercent} canManage={Boolean(runSessionId) && !activeRunId} onCompact={compactCurrentSession} onRestore={restoreRevertedSession} onFork={() => forkFromMessage()} onClose={() => setPanel('none')} />
           ) : panel === 'tasks' ? (
@@ -1071,6 +1153,19 @@ function App() {
       )}
 
       {toast && <div className="toast"><AlertTriangle size={16} />{toast}<button onClick={() => setToast(undefined)}><X size={14} /></button></div>}
+      {onboardingOpen && <OnboardingDialog
+        step={onboardingStep}
+        project={project}
+        provider={activeProvider}
+        report={environmentReport}
+        busy={doctorBusy}
+        onStep={setOnboardingStep}
+        onDoctor={runEnvironmentDoctor}
+        onChooseProject={async () => { if (await chooseProject()) setOnboardingStep(2) }}
+        onOpenModels={() => { setOnboardingOpen(false); setPanel('models') }}
+        onFinish={finishOnboarding}
+        onSkip={() => void finishOnboarding()}
+      />}
       {goalDialogOpen && <div className="dialog-backdrop"><div className="goal-dialog" role="dialog" aria-modal="true"><div className="session-dialog-icon"><Goal size={20} /></div><h2>Goal Loop 预算</h2><p>达到任一上限后停止自动续跑，并保留目标供你恢复。</p><div className="goal-limit-grid"><label><span>最大轮次</span><input type="number" min="1" max="50" value={goalLimits.maxIterations} onChange={(event) => setGoalLimits({ ...goalLimits, maxIterations: Number(event.target.value) })} /></label><label><span>最长分钟</span><input type="number" min="5" max="1440" value={goalLimits.maxMinutes} onChange={(event) => setGoalLimits({ ...goalLimits, maxMinutes: Number(event.target.value) })} /></label><label><span>Token 上限</span><input type="number" min="10000" max="20000000" step="10000" value={goalLimits.maxTokens} onChange={(event) => setGoalLimits({ ...goalLimits, maxTokens: Number(event.target.value) })} /></label></div><div className="dialog-actions"><button className="ghost-button" onClick={() => setGoalDialogOpen(false)}>取消</button><button className="solid-button" onClick={() => setGoalDialogOpen(false)}>应用</button></div></div></div>}
       {confirmFullControl && (
         <div className="dialog-backdrop">
@@ -1130,6 +1225,40 @@ function NoProject({ onChoose }: { onChoose: () => void }) {
   return <div className="empty-state"><div className="empty-icon"><FolderOpen size={30} /></div><h2>打开一个代码项目</h2><p>WetoCode 只在你选择的目录中读取和修改文件。</p><button className="solid-button" onClick={onChoose}><FolderOpen size={16} />选择项目</button></div>
 }
 
+function OnboardingDialog({ step, project, provider, report, busy, onStep, onDoctor, onChooseProject, onOpenModels, onFinish, onSkip }: {
+  step: number
+  project: ProjectInfo | null
+  provider?: ProviderSettings
+  report?: EnvironmentReport
+  busy: boolean
+  onStep: (step: number) => void
+  onDoctor: () => Promise<void>
+  onChooseProject: () => Promise<void>
+  onOpenModels: () => void
+  onFinish: (prompt?: string) => Promise<void>
+  onSkip: () => void
+}) {
+  const [firstPrompt, setFirstPrompt] = useState('')
+  const steps = ['检查电脑环境', '选择项目目录', '选择模型服务', '测试模型连接', '输入第一个需求']
+  const missingRequired = report?.checks.some((item) => item.required && item.status === 'missing')
+  const copyDiagnostics = () => {
+    if (!report) return
+    const text = [`WetoCode 环境诊断 ${new Date(report.checkedAt).toLocaleString('zh-CN')}`, ...report.checks.map((item) => `[${item.status}] ${item.name}: ${item.detail}${item.action ? ` (${item.action})` : ''}`)].join('\n')
+    void bridge.writeClipboardText(text)
+  }
+  return <div className="onboarding-backdrop"><section className="onboarding-dialog" role="dialog" aria-modal="true" aria-label="WetoCode 首次使用引导">
+    <aside className="onboarding-steps"><div className="onboarding-brand"><span className="brand-mark">W</span><span><b>开始使用 WetoCode</b><small>五步完成首次配置</small></span></div>{steps.map((label, index) => <button key={label} className={`${index === step ? 'active' : ''} ${index < step ? 'done' : ''}`} onClick={() => index <= step && onStep(index)}><span>{index < step ? <Check size={13} /> : index + 1}</span><b>{label}</b></button>)}</aside>
+    <div className="onboarding-main">
+      <div className="onboarding-head"><span><small>第 {step + 1} 步，共 5 步</small><h2>{steps[step]}</h2></span><button onClick={onSkip}>暂时跳过</button></div>
+      {step === 0 && <div className="doctor-step"><p>WetoCode 只读取工具版本和项目依赖状态，不会安装软件或修改 PATH。</p>{!report ? <button className="doctor-start" disabled={busy} onClick={() => void onDoctor()}>{busy ? <LoaderCircle className="spin" size={18} /> : <Activity size={18} />}开始检查</button> : <div className="doctor-list">{report.checks.map((item) => <article className={item.status} key={item.id}><span>{item.status === 'ready' ? <CheckCircle2 size={16} /> : item.status === 'missing' ? <AlertTriangle size={16} /> : <Activity size={16} />}</span><span><b>{item.name}</b><small>{item.detail}</small>{item.action && <em>{item.action}</em>}</span></article>)}</div>}<div className="onboarding-actions">{report && <button className="ghost-button" onClick={copyDiagnostics}><ClipboardPaste size={14} />复制诊断信息</button>}<button className="ghost-button" disabled={busy} onClick={() => void onDoctor()}><RefreshCw size={14} />重新检查</button><button className="solid-button" disabled={!report} onClick={() => onStep(1)}>{missingRequired ? '稍后处理并继续' : '下一步'}<ChevronRight size={14} /></button></div></div>}
+      {step === 1 && <div className="onboarding-choice"><FolderOpen size={34} /><h3>{project ? `已选择 ${project.name}` : '选择或创建一个项目目录'}</h3><p>{project?.path || 'WetoCode 只会在你授权的目录中读取和修改文件。'}</p><button className="solid-button" onClick={() => void onChooseProject()}><FolderOpen size={15} />{project ? '重新选择' : '选择目录'}</button>{project && <button className="next-link" onClick={() => onStep(2)}>下一步<ChevronRight size={14} /></button>}</div>}
+      {step === 2 && <div className="onboarding-choice"><Sparkles size={34} /><h3>{provider ? `当前服务：${provider.name}` : '选择模型服务'}</h3><p>{provider ? `模型 ${provider.model}。你可以先使用当前服务，也可以打开模型中心查看动态模型列表。` : '需要先配置一个模型服务。API Key 由系统密钥环加密保存。'}</p><div><button className="ghost-button" onClick={onOpenModels}><Sparkles size={14} />打开模型中心</button>{provider && <button className="solid-button" onClick={() => onStep(3)}>使用当前服务<ChevronRight size={14} /></button>}</div></div>}
+      {step === 3 && <div className="onboarding-choice"><Activity size={34} /><h3>测试模型是否可以连接</h3><p>将在模型中心使用当前项目和服务执行安全的目录检查，不会发送项目代码。</p><button className="solid-button" disabled={!provider || !project} onClick={() => { onOpenModels() }}><Activity size={14} />前往测试连接</button><button className="next-link" onClick={() => onStep(4)}>稍后测试，继续输入需求<ChevronRight size={14} /></button></div>}
+      {step === 4 && <div className="onboarding-prompt"><Rocket size={32} /><h3>用一句话描述你想做什么</h3><textarea autoFocus value={firstPrompt} onChange={(event) => setFirstPrompt(event.target.value)} placeholder="例如：帮我做一个可以记录每日开销的中文网页" rows={4} /><div className="onboarding-actions"><button className="ghost-button" onClick={() => onStep(3)}>上一步</button><button className="solid-button" disabled={!firstPrompt.trim() || !project} onClick={() => void onFinish(firstPrompt)}>进入工作台<ChevronRight size={14} /></button></div></div>}
+    </div>
+  </section></div>
+}
+
 function Welcome({ project, onTask }: { project: ProjectInfo; onTask: (prompt: string) => void }) {
   return (
     <div className="welcome">
@@ -1176,9 +1305,16 @@ function ToolStack({ tools }: { tools: ToolActivity[] }) {
   })}</div>
 }
 
-function TerminalPanel({ project, theme, onClose, onError }: {
+function TerminalPanel({ project, theme, settings, custom, height, onHeightChange, onHeightCommit, onToggleMaximized, onToggleCollapsed, onClose, onError }: {
   project: ProjectInfo
   theme: AppearanceSettings['theme']
+  settings: AppearanceSettings['terminal']
+  custom: AppearanceSettings['custom']
+  height: number
+  onHeightChange: (height: number) => void
+  onHeightCommit: (height: number) => void
+  onToggleMaximized: () => void
+  onToggleCollapsed: () => void
   onClose: () => void
   onError: (message: string) => void
 }) {
@@ -1187,12 +1323,55 @@ function TerminalPanel({ project, theme, onClose, onError }: {
   const fitRef = useRef<XtermFitAddon | undefined>(undefined)
   const infoRef = useRef<TerminalInfo | undefined>(undefined)
   const initialThemeRef = useRef(theme)
+  const initialFontSizeRef = useRef(settings.fontSize)
+  const initialTerminalSettingsRef = useRef(settings)
+  const initialTerminalCustomRef = useRef(custom)
+  const fitTerminalRef = useRef<() => void>(() => {})
+  const lastResizeRef = useRef<{ ptyId: string; rows: number; cols: number } | undefined>(undefined)
+  const dragCleanupRef = useRef<(() => void) | undefined>(undefined)
   const [info, setInfo] = useState<TerminalInfo>()
   const [starting, setStarting] = useState(false)
   const [terminalReady, setTerminalReady] = useState(false)
   const [generation, setGeneration] = useState(0)
   const [mode, setMode] = useState<TerminalInfo['mode']>('cli')
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canCopy: boolean }>()
+
+  const pasteText = useCallback((text: string) => {
+    const terminal = terminalRef.current
+    if (!terminal || !text) return
+    const lineCount = text.split(/\r?\n/).length
+    if ((lineCount > 3 || text.length > 800) && !window.confirm(`准备向终端粘贴 ${lineCount} 行内容。请确认这不是未经检查的命令。`)) return
+    terminal.paste(text)
+    terminal.focus()
+  }, [])
+
+  const pasteFromClipboard = useCallback(() => {
+    void bridge.readClipboardText().then(pasteText).catch(() => onError('无法读取剪贴板内容。'))
+  }, [onError, pasteText])
+
+  function beginResize(event: React.PointerEvent<HTMLButtonElement>) {
+    if (settings.maximized || settings.collapsed) return
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = height
+    let nextHeight = startHeight
+    const move = (moveEvent: PointerEvent) => {
+      nextHeight = Math.min(1200, Math.max(220, startHeight + moveEvent.clientY - startY))
+      onHeightChange(nextHeight)
+    }
+    const finish = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      dragCleanupRef.current = undefined
+      onHeightCommit(nextHeight)
+    }
+    dragCleanupRef.current?.()
+    dragCleanupRef.current = finish
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+  }
 
   useEffect(() => {
     if (!contextMenu) return
@@ -1212,21 +1391,18 @@ function TerminalPanel({ project, theme, onClose, onError }: {
     let disposed = false
     let observer: ResizeObserver | undefined
     let input: { dispose: () => void } | undefined
-    let compositionStart = 0
-    let inputRevision = 0
-    let compositionStartHandler: (() => void) | undefined
-    let compositionEnd: ((event: CompositionEvent) => void) | undefined
+    let animationFrame = 0
     void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]).then(([xterm, addon]) => {
       if (disposed || !hostRef.current) return
       const terminal = new xterm.Terminal({
         cursorBlink: true,
         cursorStyle: 'bar',
-        fontFamily: "'SFMono-Regular', Consolas, 'Microsoft YaHei UI', 'Noto Sans SC Variable', 'Liberation Mono', monospace",
-        fontSize: 12,
+        fontFamily: "'Cascadia Mono', 'JetBrains Mono', Consolas, 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC Variable', monospace",
+        fontSize: initialFontSizeRef.current,
         lineHeight: 1.25,
         screenReaderMode: true,
         scrollback: 5000,
-        theme: terminalTheme(initialThemeRef.current),
+        theme: terminalTheme(initialThemeRef.current, initialTerminalSettingsRef.current, initialTerminalCustomRef.current),
       })
       const fit = new addon.FitAddon()
       terminal.loadAddon(fit)
@@ -1234,48 +1410,41 @@ function TerminalPanel({ project, theme, onClose, onError }: {
       fitRef.current = fit
       terminal.open(hostRef.current)
       terminal.attachCustomKeyEventHandler((event) => {
-        if (event.type !== 'keydown' || !event.ctrlKey || !event.shiftKey) return true
+        if (event.type !== 'keydown' || event.isComposing) return true
         const key = event.key.toLowerCase()
-        if (key === 'c') {
+        if (event.ctrlKey && event.shiftKey && key === 'c') {
           if (terminal.hasSelection()) void bridge.writeClipboardText(terminal.getSelection())
           return false
         }
-        if (key === 'v') {
-          void bridge.readClipboardText().then((text) => {
-            if (text) terminal.paste(text)
-            terminal.focus()
-          })
+        if ((event.ctrlKey && event.shiftKey && key === 'v') || (event.shiftKey && key === 'insert')) {
+          pasteFromClipboard()
           return false
         }
         return true
       })
-      observer = new ResizeObserver(() => {
+      const fitTerminal = () => {
+        animationFrame = 0
+        if (!hostRef.current || !hostRef.current.clientWidth || !hostRef.current.clientHeight) return
         fit.fit()
         const current = infoRef.current
-        if (current) void bridge.resizeTerminal(current.id, { rows: terminal.rows, cols: terminal.cols })
-      })
+        if (!current || current.status !== 'running') return
+        const previous = lastResizeRef.current
+        if (previous?.ptyId === current.id && previous.rows === terminal.rows && previous.cols === terminal.cols) return
+        lastResizeRef.current = { ptyId: current.id, rows: terminal.rows, cols: terminal.cols }
+        void bridge.resizeTerminal(current.id, { rows: terminal.rows, cols: terminal.cols }).catch(() => undefined)
+      }
+      const scheduleFit = () => {
+        if (animationFrame) return
+        animationFrame = window.requestAnimationFrame(fitTerminal)
+      }
+      fitTerminalRef.current = scheduleFit
+      observer = new ResizeObserver(scheduleFit)
       observer.observe(hostRef.current)
       input = terminal.onData((data) => {
-        inputRevision += 1
         const current = infoRef.current
         if (current?.status === 'running') void bridge.sendTerminalInput(current.id, data)
       })
-      compositionStartHandler = () => {
-        compositionStart = inputRevision
-      }
-      terminal.textarea?.addEventListener('compositionstart', compositionStartHandler)
-      compositionEnd = (event) => {
-        const text = event.data
-        const revision = compositionStart
-        setTimeout(() => {
-          const current = infoRef.current
-          if (!text || inputRevision !== revision || current?.status !== 'running') return
-          inputRevision += 1
-          void bridge.sendTerminalInput(current.id, text)
-        }, 30)
-      }
-      terminal.textarea?.addEventListener('compositionend', compositionEnd)
-      fit.fit()
+      scheduleFit()
       setTerminalReady(true)
     }).catch((error: Error) => onError(`终端组件加载失败：${error.message}`))
 
@@ -1285,18 +1454,31 @@ function TerminalPanel({ project, theme, onClose, onError }: {
       if (current) void bridge.closeTerminal(current.id)
       observer?.disconnect()
       input?.dispose()
-      if (compositionStartHandler) terminalRef.current?.textarea?.removeEventListener('compositionstart', compositionStartHandler)
-      if (compositionEnd) terminalRef.current?.textarea?.removeEventListener('compositionend', compositionEnd)
+      if (animationFrame) window.cancelAnimationFrame(animationFrame)
       terminalRef.current?.dispose()
       terminalRef.current = undefined
       fitRef.current = undefined
+      fitTerminalRef.current = () => {}
+      lastResizeRef.current = undefined
       infoRef.current = undefined
     }
-  }, [onError, project.path])
+  }, [onError, pasteFromClipboard, project.path])
 
   useEffect(() => {
-    if (terminalRef.current) terminalRef.current.options.theme = terminalTheme(theme)
-  }, [theme])
+    if (!terminalRef.current) return
+    const nextSettings = {
+      background: settings.background,
+      foreground: settings.foreground,
+      cursor: settings.cursor,
+      fontSize: settings.fontSize,
+    }
+    const nextCustom = { accent: custom.accent }
+    terminalRef.current.options.theme = terminalTheme(theme, nextSettings, nextCustom)
+    terminalRef.current.options.fontSize = nextSettings.fontSize
+    fitTerminalRef.current()
+  }, [custom.accent, settings.background, settings.cursor, settings.fontSize, settings.foreground, theme])
+
+  useEffect(() => () => dragCleanupRef.current?.(), [])
 
   useEffect(() => {
     bridge.onTerminalEvent((event: TerminalEvent) => {
@@ -1322,8 +1504,9 @@ function TerminalPanel({ project, theme, onClose, onError }: {
       if (previous) await bridge.closeTerminal(previous.id).catch(() => false)
       infoRef.current = undefined
       setInfo(undefined)
+      lastResizeRef.current = undefined
       terminalRef.current?.reset()
-      fitRef.current?.fit()
+      fitTerminalRef.current()
       try {
         const terminal = terminalRef.current
         const created = await bridge.createTerminal(project.path, { rows: terminal?.rows || 24, cols: terminal?.cols || 80 }, mode)
@@ -1334,6 +1517,7 @@ function TerminalPanel({ project, theme, onClose, onError }: {
         infoRef.current = created
         setInfo(created)
         await bridge.attachTerminal(created.id)
+        fitTerminalRef.current()
         terminalRef.current?.focus()
       } catch (error) {
         if (!cancelled) onError((error as Error).message)
@@ -1348,8 +1532,8 @@ function TerminalPanel({ project, theme, onClose, onError }: {
   return (
     <section className="terminal-panel" aria-label="集成终端" data-pty-id={info?.id}>
       <div className="terminal-toolbar">
-        <div><TerminalSquare size={14} /><b>终端</b><div className="terminal-mode-switch"><button className={mode === 'cli' ? 'active' : ''} disabled={starting} onClick={() => setMode('cli')}>WetoCode CLI</button><button className={mode === 'shell' ? 'active' : ''} disabled={starting} onClick={() => setMode('shell')}>Shell</button></div><span>{starting ? '正在启动' : info ? `${info.status === 'running' ? '运行中' : `已退出 ${info.exitCode ?? ''}`}` : '未连接'}</span></div>
-        <div><button className="icon-btn" title="重新启动终端" disabled={starting} onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={14} /></button><button className="icon-btn" title="关闭终端" onClick={onClose}><X size={15} /></button></div>
+        <div><TerminalSquare size={14} /><b>终端</b><button className="terminal-resize-handle" title="拖拽调整终端高度，双击最大化或恢复" aria-label="调整终端高度" onPointerDown={beginResize} onDoubleClick={onToggleMaximized} /><div className="terminal-mode-switch"><button className={mode === 'cli' ? 'active' : ''} disabled={starting} onClick={() => setMode('cli')}>WetoCode CLI</button><button className={mode === 'shell' ? 'active' : ''} disabled={starting} onClick={() => setMode('shell')}>Shell</button></div><span>{starting ? '正在启动' : info ? `${info.status === 'running' ? '运行中' : `已退出 ${info.exitCode ?? ''}`}` : '未连接'}</span></div>
+        <div><button className="icon-btn" title="从剪贴板粘贴" onClick={pasteFromClipboard}><ClipboardPaste size={14} /></button><button className="icon-btn" title={settings.collapsed ? '展开终端' : '折叠终端'} onClick={onToggleCollapsed}>{settings.collapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button><button className="icon-btn" title={settings.maximized ? '恢复终端尺寸' : '终端占满工作区'} onClick={onToggleMaximized}>{settings.maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button><button className="icon-btn" title="重新启动终端" disabled={starting} onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={14} /></button><button className="icon-btn" title="关闭终端" onClick={onClose}><X size={15} /></button></div>
       </div>
       <div className="terminal-host" onContextMenu={(event) => {
         event.preventDefault()
@@ -1371,10 +1555,7 @@ function TerminalPanel({ project, theme, onClose, onError }: {
             setContextMenu(undefined)
           }}>复制</button>
           <button onClick={() => {
-            void bridge.readClipboardText().then((text) => {
-              if (text) terminalRef.current?.paste(text)
-              terminalRef.current?.focus()
-            })
+            pasteFromClipboard()
             setContextMenu(undefined)
           }}>粘贴</button>
         </div>}
@@ -1383,11 +1564,12 @@ function TerminalPanel({ project, theme, onClose, onError }: {
   )
 }
 
-function terminalTheme(theme: AppearanceSettings['theme']) {
-  const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  return dark
-    ? { background: '#171a1c', foreground: '#d9dfdc', cursor: '#65b88f', selectionBackground: '#315642', black: '#171a1c', brightBlack: '#65706b' }
-    : { background: '#202528', foreground: '#e0e6e3', cursor: '#72c79d', selectionBackground: '#355e49', black: '#202528', brightBlack: '#7f8a85' }
+function terminalTheme(theme: AppearanceSettings['theme'], settings?: Pick<AppearanceSettings['terminal'], 'background' | 'foreground' | 'cursor'>, custom?: Pick<AppearanceSettings['custom'], 'accent'>) {
+  const dark = ['dark', 'wetocode-dark', 'forest-care'].includes(theme) || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const base = dark
+    ? { background: '#171a1c', foreground: '#d9dfdc', cursor: '#65b88f', selectionBackground: '#315642', black: '#171a1c', red: '#e06c75', green: '#77b889', yellow: '#d9ad63', blue: '#77a8e8', magenta: '#c98ddb', cyan: '#70b8bd', white: '#d9dfdc', brightBlack: '#7c8983', brightRed: '#ee8e95', brightGreen: '#93d4a5', brightYellow: '#efca82', brightBlue: '#97c5ff', brightMagenta: '#e3aae9', brightCyan: '#93d7dc', brightWhite: '#f4f7f5' }
+    : { background: '#202528', foreground: '#e0e6e3', cursor: '#72c79d', selectionBackground: '#355e49', black: '#202528', red: '#ef8585', green: '#91ce9e', yellow: '#e6c277', blue: '#8ab4f8', magenta: '#d6a1e7', cyan: '#89cdd1', white: '#e0e6e3', brightBlack: '#8a9690', brightRed: '#ffaaaa', brightGreen: '#b0e6bb', brightYellow: '#f4d796', brightBlue: '#aed0ff', brightMagenta: '#ebbeef', brightCyan: '#afe7e9', brightWhite: '#ffffff' }
+  return { ...base, background: settings?.background || base.background, foreground: settings?.foreground || base.foreground, cursor: settings?.cursor || custom?.accent || base.cursor }
 }
 
 function PanelHead({ icon: Icon, title, onClose }: { icon: typeof Settings; title: string; onClose: () => void }) {
@@ -1722,6 +1904,108 @@ function TasksPanel({ tasks, activeRunId, onOpen, onStop, onDismiss, onClose }: 
   </>
 }
 
+type ModelFilter = 'all' | 'free' | 'connected' | 'favorite' | 'tools' | 'vision' | 'reasoning'
+
+function modelPriceLabel(model: RegistryModel) {
+  if (model.priceState === 'free') return '免费'
+  if (model.priceState === 'unknown') return '价格未知'
+  if (model.inputPrice === undefined || model.outputPrice === undefined) return '付费'
+  return `输入 $${model.inputPrice} / 输出 $${model.outputPrice}`
+}
+
+function ModelCenterPanel({ project, activeProvider, onSettings, onConfigure, onError, onClose }: {
+  project: ProjectInfo | null
+  activeProvider?: ProviderSettings
+  onSettings: (settings: AppSettings) => void
+  onConfigure: () => void
+  onError: (message: string) => void
+  onClose: () => void
+}) {
+  const [registry, setRegistry] = useState<ModelRegistryResult>()
+  const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<ModelFilter>('all')
+  const [busyId, setBusyId] = useState<string>()
+  const [notice, setNotice] = useState<string>()
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+
+  const load = useCallback(async (refresh = false) => {
+    setLoading(true); setNotice(undefined)
+    try { setRegistry(await bridge.listModelRegistry(project?.path, refresh)) }
+    catch (error) { onErrorRef.current((error as Error).message) }
+    finally { setLoading(false) }
+  }, [project?.path])
+
+  useEffect(() => { void load(false) }, [load])
+
+  const visible = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
+    const favorites = new Set(registry?.favorites || [])
+    return (registry?.models || []).filter((model) => {
+      if (normalizedQuery && !`${model.displayName} ${model.modelId} ${model.providerName}`.toLocaleLowerCase('zh-CN').includes(normalizedQuery)) return false
+      if (filter === 'free') return model.isFree
+      if (filter === 'connected') return model.availability === 'connected'
+      if (filter === 'favorite') return favorites.has(model.id)
+      if (filter === 'tools') return model.supportsTools === true
+      if (filter === 'vision') return model.supportsVision === true
+      if (filter === 'reasoning') return model.supportsReasoning === true
+      return true
+    })
+  }, [filter, query, registry])
+
+  async function activateModel(model: RegistryModel) {
+    setBusyId(model.id); setNotice(undefined)
+    try {
+      onSettings(await bridge.useRegistryModel({ configurationId: model.configurationId, modelId: model.modelId, contextWindow: model.contextWindow }))
+      setNotice(`已将 ${model.displayName} 设为当前模型。`)
+    } catch (error) { onError((error as Error).message) }
+    finally { setBusyId(undefined) }
+  }
+
+  async function testModel(model: RegistryModel) {
+    setBusyId(model.id); setNotice(undefined)
+    try {
+      const result = await bridge.testRegistryModel({ configurationId: model.configurationId, modelId: model.modelId })
+      setNotice(`${model.displayName}：${result.message} ${result.latencyMs} ms`)
+    } catch (error) { onError((error as Error).message) }
+    finally { setBusyId(undefined) }
+  }
+
+  async function toggleFavorite(model: RegistryModel) {
+    const favorite = !(registry?.favorites || []).includes(model.id)
+    try {
+      const favorites = await bridge.setModelFavorite(model.id, favorite)
+      setRegistry((current) => current ? { ...current, favorites } : current)
+    } catch (error) { onError((error as Error).message) }
+  }
+
+  const filters: Array<{ id: ModelFilter; label: string }> = [
+    { id: 'all', label: '全部' }, { id: 'free', label: '免费' }, { id: 'connected', label: '已连接' },
+    { id: 'favorite', label: '收藏' }, { id: 'tools', label: '工具' }, { id: 'vision', label: '图片' }, { id: 'reasoning', label: '推理' },
+  ]
+
+  return <><PanelHead icon={Sparkles} title="模型中心" onClose={onClose} /><div className="panel-scroll model-center">
+    <div className="model-center-summary"><span><b>当前已连接服务中可用的模型</b><small>{registry ? `${registry.models.length} 个模型 · ${registry.cached ? '使用缓存' : '刚刚刷新'}` : '正在读取模型目录'}</small></span><button className="icon-btn" title="手动刷新模型列表" disabled={loading} onClick={() => void load(true)}><RefreshCw className={loading ? 'spin' : ''} size={15} /></button></div>
+    <label className="model-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型或服务商" /></label>
+    <div className="model-filters">{filters.map((item) => <button key={item.id} className={filter === item.id ? 'active' : ''} onClick={() => setFilter(item.id)}>{item.label}</button>)}</div>
+    {notice && <div className="model-notice"><CheckCircle2 size={14} />{notice}</div>}
+    {registry?.errors.map((error) => <div className="model-discovery-error" key={error.configurationId}><AlertTriangle size={14} /><span><b>{error.providerName} 加载失败</b><small>{error.message}</small></span><button onClick={() => void load(true)}>重试</button></div>)}
+    {loading && !registry ? <div className="models-loading"><LoaderCircle className="spin" size={20} /><span>正在同步已连接服务的模型</span></div> : null}
+    {!loading && !visible.length ? <div className="models-empty"><Sparkles size={25} /><b>没有匹配的模型</b><span>{filter === 'free' ? '价格未知的模型不会被归入免费列表。' : '调整筛选条件，或配置新的模型服务。'}</span><button className="ghost-button" onClick={onConfigure}>配置模型服务</button></div> : null}
+    <div className="model-card-list">{visible.map((model) => {
+      const favorite = (registry?.favorites || []).includes(model.id)
+      const selected = activeProvider?.id === model.configurationId && activeProvider.model === model.modelId
+      return <article className={`model-card ${selected ? 'selected' : ''}`} key={model.id}>
+        <div className="model-card-head"><span className="provider-mark">{model.providerName.slice(0, 1)}</span><span><b>{model.displayName}</b><small>{model.providerName} · {model.modelId}</small></span><button className={`model-favorite ${favorite ? 'active' : ''}`} title={favorite ? '取消收藏' : '收藏模型'} onClick={() => void toggleFavorite(model)}>{favorite ? <Star size={15} fill="currentColor" /> : <Heart size={15} />}</button></div>
+        <div className="model-badges"><span className={`price ${model.priceState}`}>{modelPriceLabel(model)}</span><span className={`availability ${model.availability}`}>{model.authRequired ? '需要密钥' : model.availability === 'connected' ? '可用' : model.availability === 'not_configured' ? '未配置' : '已配置'}</span>{model.supportsTools && <span><Plug size={11} />工具</span>}{model.supportsVision && <span><Image size={11} />图片</span>}{model.supportsReasoning && <span><BrainCircuit size={11} />推理</span>}</div>
+        <p>{model.description}{model.contextWindow ? ` · ${compactNumber(model.contextWindow)} 上下文` : ''}</p>
+        <div className="model-card-actions"><button className="ghost-button" disabled={Boolean(busyId) || model.authRequired} onClick={() => void testModel(model)}>{busyId === model.id ? <LoaderCircle className="spin" size={13} /> : <Activity size={13} />}测试连接</button><button className="solid-button" disabled={Boolean(busyId) || model.authRequired || selected} onClick={() => void activateModel(model)}>{selected ? <Check size={13} /> : <Play size={13} />}{selected ? '当前使用' : '开始使用'}</button></div>
+      </article>
+    })}</div>
+  </div></>
+}
+
 function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings, onAppearance, onProviderChange }: {
   bootstrap: BootstrapData
   activeProvider?: ProviderSettings
@@ -1742,6 +2026,11 @@ function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings,
   useEffect(() => setZoom(bootstrap.settings.appearance.zoom), [bootstrap.settings.appearance.zoom])
 
   const selectedPreset = editing ? providerPresets.find((preset) => preset.name === editing.name && preset.providerId === editing.providerId) : undefined
+  const themePresets: Array<{ id: AppearanceSettings['theme']; label: string; icon: typeof Moon }> = [
+    { id: 'wetocode-dark', label: 'Weto 深色', icon: Moon }, { id: 'cloud-light', label: '云雾浅色', icon: Sun },
+    { id: 'strawberry-cream', label: '草莓奶油', icon: Heart }, { id: 'silver-minimal', label: '极简银灰', icon: Monitor },
+    { id: 'forest-care', label: '护眼墨绿', icon: Leaf },
+  ]
 
   function editProvider(provider?: Partial<ProviderSettings>) {
     setError(undefined)
@@ -1776,17 +2065,32 @@ function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings,
     finally { setChecking(false) }
   }
 
+  async function selectBackgroundImage() {
+    try {
+      const backgroundImage = await bridge.chooseAppearanceBackground()
+      if (backgroundImage) await onAppearance({ custom: { ...bootstrap.settings.appearance.custom, backgroundImage } })
+    } catch (reason) { setError((reason as Error).message) }
+  }
+
+  async function importTheme() {
+    try {
+      const settings = await bridge.importAppearance()
+      if (settings) onSettings(settings)
+    } catch (reason) { setError((reason as Error).message) }
+  }
+
   return (
     <>
       <PanelHead icon={Settings} title="模型与设置" onClose={onClose} />
       <div className="panel-scroll settings-content">
         <section className="settings-section">
+          <div className="settings-title"><div><Zap size={16} /><span><b>使用模式</b><small>项目和会话数据在两种模式间共享</small></span></div></div>
+          <div className="experience-options"><button className={bootstrap.settings.experienceMode === 'beginner' ? 'active' : ''} onClick={async () => onSettings(await bridge.setExperienceMode('beginner'))}><Sparkles size={15} /><span><b>小白模式</b><small>任务入口优先，默认隐藏终端</small></span></button><button className={bootstrap.settings.experienceMode === 'professional' ? 'active' : ''} onClick={async () => onSettings(await bridge.setExperienceMode('professional'))}><Code2 size={15} /><span><b>专业模式</b><small>保留完整开发工作台</small></span></button></div>
+        </section>
+        <section className="settings-section">
           <div className="settings-title"><div><Sun size={16} /><span><b>外观</b><small>主题、密度和界面缩放</small></span></div></div>
-          <div className="appearance-setting"><span><b>主题</b><small>跟随工作环境切换</small></span><div className="appearance-options theme-options">
-            <button title="跟随系统" className={bootstrap.settings.appearance.theme === 'system' ? 'active' : ''} onClick={() => onAppearance({ theme: 'system' })}><Monitor size={14} /><span>系统</span></button>
-            <button title="浅色" className={bootstrap.settings.appearance.theme === 'light' ? 'active' : ''} onClick={() => onAppearance({ theme: 'light' })}><Sun size={14} /><span>浅色</span></button>
-            <button title="深色" className={bootstrap.settings.appearance.theme === 'dark' ? 'active' : ''} onClick={() => onAppearance({ theme: 'dark' })}><Moon size={14} /><span>深色</span></button>
-          </div></div>
+          <div className="appearance-setting theme-setting"><span><b>主题</b><small>实时应用并在重启后保持</small></span><select value={bootstrap.settings.appearance.theme} onChange={(event) => void onAppearance({ theme: event.target.value as AppearanceSettings['theme'] })}><option value="system">跟随系统</option><option value="light">经典浅色</option><option value="dark">经典深色</option>{themePresets.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select></div>
+          <div className="theme-preset-grid">{themePresets.map(({ id, label, icon: Icon }) => <button key={id} className={bootstrap.settings.appearance.theme === id ? 'active' : ''} onClick={() => void onAppearance({ theme: id })}><Icon size={15} /><span>{label}</span></button>)}</div>
           <div className="appearance-setting"><span><b>信息密度</b><small>调整任务列表和内容间距</small></span><div className="appearance-options text-options">
             <button className={bootstrap.settings.appearance.density === 'comfortable' ? 'active' : ''} onClick={() => onAppearance({ density: 'comfortable' })}>舒适</button>
             <button className={bootstrap.settings.appearance.density === 'compact' ? 'active' : ''} onClick={() => onAppearance({ density: 'compact' })}>紧凑</button>
@@ -1794,6 +2098,14 @@ function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings,
           <div className="appearance-setting zoom-setting"><span><b>界面缩放</b><small>调整所有文字和控件大小</small></span><div className="zoom-slider"><input type="range" min="0.8" max="1.4" step="0.05" value={zoom} aria-label="界面缩放" onChange={(event) => {
             setZoom(Number(event.target.value))
           }} onPointerUp={(event) => void onAppearance({ zoom: Number(event.currentTarget.value) })} onKeyUp={(event) => void onAppearance({ zoom: Number(event.currentTarget.value) })} /><output>{Math.round(zoom * 100)}%</output></div></div>
+          <div className="appearance-setting zoom-setting"><span><b>终端字号</b><small>中英文代码与中文输出同步调整</small></span><div className="zoom-slider"><input type="range" min="10" max="22" step="1" value={bootstrap.settings.appearance.terminal.fontSize} aria-label="终端字号" onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, fontSize: Number(event.target.value) } })} /><output>{bootstrap.settings.appearance.terminal.fontSize}px</output></div></div>
+          <div className="appearance-setting zoom-setting"><span><b>自定义颜色</b><small>主题 token 会立即应用到界面和终端光标</small></span><div className="color-controls"><label><span>主色</span><input type="color" value={bootstrap.settings.appearance.custom.accent || '#176b4d'} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, accent: event.target.value } })} /></label><label><span>背景</span><input type="color" value={bootstrap.settings.appearance.custom.background || '#f3f5f7'} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, background: event.target.value } })} /></label><label><span>终端背景</span><input type="color" value={bootstrap.settings.appearance.terminal.background || '#202528'} onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, background: event.target.value } })} /></label></div></div>
+          <div className="appearance-setting zoom-setting"><span><b>卡片透明度</b><small>使用背景图片时保持内容可读</small></span><div className="zoom-slider"><input type="range" min="70" max="100" step="1" value={bootstrap.settings.appearance.custom.transparency} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, transparency: Number(event.target.value), surface: bootstrap.settings.appearance.custom.surface || '#ffffff' } })} /><output>{bootstrap.settings.appearance.custom.transparency}%</output></div></div>
+          <div className="appearance-setting zoom-setting"><span><b>圆角</b><small>调整主要控件的边角大小</small></span><div className="zoom-slider"><input type="range" min="0" max="12" step="1" value={bootstrap.settings.appearance.custom.radius} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, radius: Number(event.target.value) } })} /><output>{bootstrap.settings.appearance.custom.radius}px</output></div></div>
+          <div className="appearance-setting zoom-setting"><span><b>阴影强度</b><small>调整浮层与工作区的层级感</small></span><div className="zoom-slider"><input type="range" min="0" max="3" step="1" value={bootstrap.settings.appearance.custom.shadow} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, shadow: Number(event.target.value) } })} /><output>{bootstrap.settings.appearance.custom.shadow}</output></div></div>
+          <div className="appearance-setting zoom-setting"><span><b>终端配色</b><small>分别设置前景文字与光标</small></span><div className="color-controls"><label><span>文字</span><input type="color" value={bootstrap.settings.appearance.terminal.foreground || '#e0e6e3'} onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, foreground: event.target.value } })} /></label><label><span>光标</span><input type="color" value={bootstrap.settings.appearance.terminal.cursor || '#72c79d'} onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, cursor: event.target.value } })} /></label></div></div>
+          <div className="appearance-setting"><span><b>界面动画</b><small>可减少动画以提升稳定性</small></span><button className={`toggle-button ${bootstrap.settings.appearance.custom.animations ? 'on' : ''}`} title="切换界面动画" onClick={() => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, animations: !bootstrap.settings.appearance.custom.animations } })}><i /></button></div>
+          <div className="theme-file-actions"><button className="ghost-button" onClick={() => void selectBackgroundImage()}><Image size={14} />选择本地背景</button><button className="ghost-button" onClick={() => void bridge.exportAppearance()}><ArrowDownToLine size={14} />导出主题</button><button className="ghost-button" onClick={() => void importTheme()}><ArrowDownToLine size={14} />导入主题</button><button className="ghost-button" onClick={() => void onAppearance({ theme: 'system', custom: { accent: '', background: '', surface: '', transparency: 100, radius: 6, shadow: 1, animations: true, backgroundImage: '' }, terminal: { ...bootstrap.settings.appearance.terminal, background: '', foreground: '', cursor: '' } })}><RotateCcw size={14} />恢复默认</button></div>
         </section>
         <section className="settings-section">
           <div className="settings-title"><div><KeyRound size={16} /><span><b>模型供应商</b><small>密钥不会进入对话上下文</small></span></div><button className="mini-button" onClick={() => editProvider()}><Plus size={14} />添加</button></div>
@@ -1849,6 +2161,7 @@ function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings,
             <label><span>API 地址 <small>填写版本根路径，不要追加 /chat/completions</small></span><input value={editing.baseUrl || ''} placeholder="https://gateway.example.com/v1" onChange={(event) => setEditing({ ...editing, baseUrl: event.target.value, kind: event.target.value ? 'custom' : editing.kind })} /></label>
             <details className="provider-advanced"><summary>高级配置</summary>
               <label><span>供应商 ID</span><input value={editing.providerId || ''} onChange={(event) => setEditing({ ...editing, providerId: event.target.value })} /></label>
+              <label><span>价格标记 <small>内部服务可由你明确标记</small></span><select value={editing.priceMode || 'unknown'} onChange={(event) => setEditing({ ...editing, priceMode: event.target.value as ProviderSettings['priceMode'] })}><option value="unknown">价格未知</option><option value="free">内部免费</option><option value="paid">付费</option></select></label>
               <div className="field-row">
                 <label><span>上下文窗口</span><input type="number" value={editing.contextWindow || 128000} onChange={(event) => setEditing({ ...editing, contextWindow: Number(event.target.value) })} /></label>
                 <label><span>最大输出</span><input type="number" value={editing.outputLimit || 16384} onChange={(event) => setEditing({ ...editing, outputLimit: Number(event.target.value) })} /></label>

@@ -119,10 +119,27 @@ let client
 try {
   client = cdp(await debuggerUrl())
   await until(client, `Boolean(document.querySelector('.app-shell'))`, 'application bootstrap')
+  await until(client, `(() => {
+    const button = [...document.querySelectorAll('.header-actions button')].find((item) => item.title === '打开终端')
+    return Boolean(button && !button.disabled)
+  })()`, 'restored project workspace')
   await client.evaluate(`[...document.querySelectorAll('.header-actions button')].find((button) => button.title === '打开终端').click()`)
   await until(client, `document.querySelector('.terminal-toolbar')?.innerText.includes('运行中')`, 'running terminal', 60_000)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent.includes('WetoCode CLI')`, 'embedded CLI mode', 10_000)
   const cliPtyId = await client.evaluate(`document.querySelector('.terminal-panel')?.dataset.ptyId`)
+  const initialTerminalHeight = await client.evaluate(`document.querySelector('.terminal-panel')?.getBoundingClientRect().height || 0`)
+  if (initialTerminalHeight < 200) throw new Error(`Terminal panel did not receive a usable workspace height: ${initialTerminalHeight}`)
+  await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '终端占满工作区').click()`)
+  await until(client, `document.querySelector('.workspace')?.classList.contains('terminal-maximized')`, 'terminal workspace maximize')
+  await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '恢复终端尺寸').click()`)
+  await until(client, `!document.querySelector('.workspace')?.classList.contains('terminal-maximized')`, 'terminal workspace restore')
+  await client.evaluate(`(() => {
+    const handle = document.querySelector('.terminal-resize-handle')
+    handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientY: 200, pointerId: 1 }))
+    window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientY: 270, pointerId: 1 }))
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientY: 270, pointerId: 1 }))
+  })()`)
+  await until(client, `document.querySelector('.terminal-panel')?.getBoundingClientRect().height >= ${Math.ceil(initialTerminalHeight + 40)}`, 'terminal height drag')
   await new Promise((resolve) => setTimeout(resolve, 2_000))
   const cliState = await client.evaluate(`({
     status: document.querySelector('.terminal-toolbar')?.innerText,
@@ -203,7 +220,23 @@ try {
   }
   await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '关闭终端').click()`)
   await until(client, `!document.querySelector('.terminal-panel')`, 'terminal close', 5_000)
-  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', localizedTui: true, chineseIme: 'WETOCODE_IME_OK', contextMenu: ['复制', '粘贴'], clipboardPaste: 'WETOCODE_PASTE_OK', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
+  await client.evaluate(`[...document.querySelectorAll('.header-actions button')].find((button) => button.title === '设置').click()`)
+  await until(client, `Boolean(document.querySelector('.settings-content'))`, 'settings panel')
+  await client.evaluate(`(() => {
+    const select = document.querySelector('.theme-setting select')
+    select.value = 'strawberry-cream'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await until(client, `document.querySelector('.app-shell')?.dataset.theme === 'strawberry-cream'`, 'original theme switch')
+  await client.evaluate(`document.querySelector('.detail-panel button[title="关闭"]').click()`)
+  await until(client, `!document.querySelector('.settings-content')`, 'settings close')
+  await client.evaluate(`[...document.querySelectorAll('.header-actions button')].find((button) => button.title === '模型中心').click()`)
+  await until(client, `Boolean(document.querySelector('.model-center'))`, 'model center')
+  await until(client, `document.querySelectorAll('.model-card').length > 0`, 'model registry result', 60_000)
+  const modelCard = await client.evaluate(`document.querySelector('.model-card')?.innerText || ''`)
+  if (!modelCard.includes('Mimo') && !modelCard.includes('mimo')) throw new Error(`Configured model is missing from the registry: ${modelCard}`)
+  await client.evaluate(`document.querySelector('.detail-panel button[title="关闭"]').click()`)
+  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', localizedTui: true, chineseIme: 'WETOCODE_IME_OK', contextMenu: ['复制', '粘贴'], clipboardPaste: 'WETOCODE_PASTE_OK', terminalWorkspace: ['resize', 'maximize', 'restore'], modelRegistry: 'configured-model-visible', theme: 'strawberry-cream', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
 } finally {
   client?.close()
   child.kill('SIGTERM')

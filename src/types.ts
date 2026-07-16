@@ -2,7 +2,7 @@ export type ProviderKind = 'builtin' | 'custom'
 export type ProviderProtocol = 'openai-compatible' | 'anthropic' | 'google'
 export type AccessMode = 'confirm' | 'auto' | 'plan' | 'full'
 export type ReasoningEffort = 'off' | 'high' | 'max'
-export type ThemePreference = 'system' | 'light' | 'dark'
+export type ThemePreference = 'system' | 'light' | 'dark' | 'wetocode-dark' | 'cloud-light' | 'strawberry-cream' | 'silver-minimal' | 'forest-care'
 export type DensityPreference = 'comfortable' | 'compact'
 
 export interface AppearanceSettings {
@@ -10,6 +10,25 @@ export interface AppearanceSettings {
   density: DensityPreference
   zoom: number
   sidebarOpen: boolean
+  terminal: {
+    height: number
+    maximized: boolean
+    collapsed: boolean
+    fontSize: number
+    background: string
+    foreground: string
+    cursor: string
+  }
+  custom: {
+    accent: string
+    background: string
+    surface: string
+    transparency: number
+    radius: number
+    shadow: number
+    animations: boolean
+    backgroundImage: string
+  }
 }
 
 export interface ProviderSettings {
@@ -23,6 +42,44 @@ export interface ProviderSettings {
   contextWindow: number
   outputLimit?: number
   hasApiKey: boolean
+  priceMode?: 'unknown' | 'free' | 'paid'
+}
+
+export type ModelPriceState = 'free' | 'paid' | 'unknown'
+export type ModelAvailability = 'connected' | 'configured' | 'not_configured' | 'unavailable'
+
+export interface RegistryModel {
+  id: string
+  configurationId: string
+  modelId: string
+  providerId: string
+  providerName: string
+  displayName: string
+  description: string
+  inputPrice?: number
+  outputPrice?: number
+  isFree: boolean
+  freeReason: string
+  priceState: ModelPriceState
+  contextWindow: number
+  supportsTools?: boolean
+  supportsVision?: boolean
+  supportsReasoning?: boolean
+  supportsStreaming: boolean
+  authRequired: boolean
+  availability: ModelAvailability
+  latency?: number
+  lastCheckedAt: number
+  source: 'configured' | 'provider-api' | 'opencode'
+  tags: string[]
+}
+
+export interface ModelRegistryResult {
+  models: RegistryModel[]
+  refreshedAt: number
+  cached: boolean
+  errors: Array<{ configurationId: string; providerName: string; message: string }>
+  favorites: string[]
 }
 
 export interface AppSettings {
@@ -40,6 +97,9 @@ export interface AppSettings {
   }
   autoUpdate: boolean
   security: { keyStorage: string }
+  modelFavorites?: string[]
+  onboardingCompleted?: boolean
+  experienceMode: 'beginner' | 'professional'
 }
 
 export interface BootstrapData {
@@ -48,6 +108,20 @@ export interface BootstrapData {
   appVersion: string
   platform: string
   packaged: boolean
+}
+
+export interface EnvironmentCheck {
+  id: string
+  name: string
+  status: 'ready' | 'missing' | 'warning' | 'skipped'
+  required: boolean
+  detail: string
+  action: string
+}
+
+export interface EnvironmentReport {
+  checkedAt: number
+  checks: EnvironmentCheck[]
 }
 
 export interface ProjectInfo {
@@ -394,6 +468,7 @@ export interface TerminalEvent {
 export interface WetoCodeBridge {
   getBootstrap: () => Promise<BootstrapData>
   getEngineStatus: () => Promise<BootstrapData['engine']>
+  getEnvironmentDoctor: (projectPath?: string) => Promise<EnvironmentReport>
   showMainWindow: () => Promise<boolean>
   chooseProject: () => Promise<(ProjectInfo & { sessions: SessionInfo[] }) | null>
   listSessions: (projectPath: string) => Promise<SessionInfo[]>
@@ -445,11 +520,20 @@ export interface WetoCodeBridge {
   writeClipboardText: (value: string) => Promise<boolean>
   saveProvider: (provider: Partial<ProviderSettings> & { apiKey?: string }) => Promise<AppSettings>
   testProvider: (provider: Partial<ProviderSettings> & { apiKey?: string }) => Promise<{ ok: true; status: number; latencyMs: number; message: string }>
+  listModelRegistry: (projectPath?: string, refresh?: boolean) => Promise<ModelRegistryResult>
+  useRegistryModel: (input: Pick<RegistryModel, 'configurationId' | 'modelId' | 'contextWindow'>) => Promise<AppSettings>
+  testRegistryModel: (input: Pick<RegistryModel, 'configurationId' | 'modelId'>) => Promise<{ ok: true; status: number; latencyMs: number; message: string }>
+  setModelFavorite: (modelId: string, favorite: boolean) => Promise<string[]>
   deleteProvider: (id: string) => Promise<AppSettings>
   setActiveProvider: (id: string) => Promise<AppSettings>
   setAccessMode: (accessMode: AccessMode) => Promise<AppSettings>
   setReasoningEffort: (effort: ReasoningEffort) => Promise<AppSettings>
   setAppearance: (appearance: Partial<AppearanceSettings>) => Promise<AppSettings>
+  exportAppearance: () => Promise<boolean>
+  importAppearance: () => Promise<AppSettings | null>
+  chooseAppearanceBackground: () => Promise<string | null>
+  setOnboardingCompleted: (complete: boolean) => Promise<AppSettings>
+  setExperienceMode: (mode: AppSettings['experienceMode']) => Promise<AppSettings>
   getGitStatus: (projectPath: string) => Promise<GitStatusInfo>
   getGitDiff: (projectPath: string, filePath: string) => Promise<GitDiffInfo>
   discardGitChange: (projectPath: string, filePath: string) => Promise<GitStatusInfo>

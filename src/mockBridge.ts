@@ -22,7 +22,12 @@ const bootstrap: BootstrapData = {
     activeProviderId: 'wetocode-free',
     accessMode: 'auto',
     reasoningEffort: 'max',
-    appearance: { theme: 'system', density: 'comfortable', zoom: 1, sidebarOpen: true },
+    experienceMode: 'beginner',
+    appearance: {
+      theme: 'system', density: 'comfortable', zoom: 1, sidebarOpen: true,
+      terminal: { height: 360, maximized: false, collapsed: false, fontSize: 13, background: '', foreground: '', cursor: '' },
+      custom: { accent: '', background: '', surface: '', transparency: 100, radius: 6, shadow: 1, animations: true, backgroundImage: '' },
+    },
     context: {
       autoCompact: true,
       pruneToolOutput: true,
@@ -41,6 +46,7 @@ const bootstrap: BootstrapData = {
 export const mockBridge: WetoCodeBridge = {
   getBootstrap: async () => bootstrap,
   getEngineStatus: async () => bootstrap.engine,
+  getEnvironmentDoctor: async () => ({ checkedAt: Date.now(), checks: [{ id: 'node', name: 'Node.js', status: 'ready', required: true, detail: '已找到并可运行。', action: '' }, { id: 'provider', name: '模型服务配置', status: 'ready', required: true, detail: '已检测到可用服务。', action: '' }] }),
   showMainWindow: async () => true,
   chooseProject: async () => ({ path: '/home/dev/projects/demo-project', name: 'demo-project', sessions: [] }),
   listSessions: async () => [],
@@ -88,6 +94,25 @@ export const mockBridge: WetoCodeBridge = {
     return bootstrap.settings
   },
   testProvider: async () => ({ ok: true, status: 200, latencyMs: 120, message: '连接成功，密钥、API 地址和模型 ID 均可用。' }),
+  listModelRegistry: async () => ({
+    models: [{
+      id: 'wetocode-free:mimo-v2.5-free', configurationId: 'wetocode-free', modelId: 'mimo-v2.5-free', providerId: 'opencode', providerName: '公共免费模型',
+      displayName: 'Mimo 2.5 Free', description: '当前已配置模型', inputPrice: 0, outputPrice: 0, isFree: true, freeReason: '演示数据', priceState: 'free', contextWindow: 262144,
+      supportsTools: true, supportsVision: false, supportsReasoning: true, supportsStreaming: true, authRequired: false, availability: 'connected', latency: 120, lastCheckedAt: Date.now(), source: 'configured', tags: ['已配置'],
+    }], refreshedAt: Date.now(), cached: false, errors: [], favorites: [],
+  }),
+  useRegistryModel: async (input) => {
+    bootstrap.settings.providers = bootstrap.settings.providers.map((provider) => provider.id === input.configurationId ? { ...provider, model: input.modelId, contextWindow: input.contextWindow || provider.contextWindow } : provider)
+    bootstrap.settings.activeProviderId = input.configurationId
+    return bootstrap.settings
+  },
+  testRegistryModel: async () => ({ ok: true, status: 200, latencyMs: 120, message: '连接成功，模型可用。' }),
+  setModelFavorite: async (modelId, favorite) => {
+    const favorites = new Set(bootstrap.settings.modelFavorites || [])
+    if (favorite) favorites.add(modelId); else favorites.delete(modelId)
+    bootstrap.settings.modelFavorites = [...favorites]
+    return bootstrap.settings.modelFavorites
+  },
   deleteProvider: async () => bootstrap.settings,
   setActiveProvider: async (id) => {
     bootstrap.settings.activeProviderId = id
@@ -103,6 +128,17 @@ export const mockBridge: WetoCodeBridge = {
   },
   setAppearance: async (appearance) => {
     bootstrap.settings.appearance = { ...bootstrap.settings.appearance, ...appearance }
+    return bootstrap.settings
+  },
+  exportAppearance: async () => true,
+  importAppearance: async () => bootstrap.settings,
+  chooseAppearanceBackground: async () => null,
+  setOnboardingCompleted: async (complete) => {
+    bootstrap.settings.onboardingCompleted = complete
+    return bootstrap.settings
+  },
+  setExperienceMode: async (experienceMode) => {
+    bootstrap.settings.experienceMode = experienceMode
     return bootstrap.settings
   },
   getGitStatus: async () => ({ isRepository: false, reason: '当前项目尚未初始化 Git 仓库。', changes: [], checkpoints: [] }),

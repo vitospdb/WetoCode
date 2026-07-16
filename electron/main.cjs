@@ -2,6 +2,7 @@ const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativ
 const { autoUpdater } = require('electron-updater')
 const { execFile, spawn } = require('node:child_process')
 const { createHash, randomUUID } = require('node:crypto')
+const { pathToFileURL } = require('node:url')
 const fs = require('node:fs')
 const path = require('node:path')
 const { promisify } = require('node:util')
@@ -16,8 +17,10 @@ const { emptyUsage, normalizeUsage, recordUsage, usageSummary } = require('./usa
 const { nextRunAt, normalizeAutomations, normalizeSchedule } = require('./automation-state.cjs')
 const { loopbackPreviewUrl, packagePreviewCommands, parsePreviewCommand, urlFromOutput } = require('./preview-tools.cjs')
 const { assertProviderUrl, normalizeBaseUrl, normalizeProviderProtocol, providerPackage, testProviderConnection } = require('./provider-tools.cjs')
+const { CACHE_TTL_MS, configuredModel, discoverOpenAICompatibleModels, modelFromOpenAI, modelFromOpenCode, uniqueModels } = require('./model-registry.cjs')
 const { normalizeTerminalMode, terminalPtyInput } = require('./terminal-tools.cjs')
 const { createTerminalBrandFilter } = require('./terminal-brand.cjs')
+const { environmentReport } = require('./environment-tools.cjs')
 
 const execFileAsync = promisify(execFile)
 const activeRuns = new Map()
@@ -27,6 +30,7 @@ const pendingAttachments = new Map()
 const taskHistory = new Map()
 const agentServers = new Map()
 const previewProcesses = new Map()
+let modelRegistryCache
 let sdkPromise
 let residentTray
 let isQuitting = false
@@ -49,6 +53,7 @@ const DEFAULT_SETTINGS = {
       kind: 'builtin',
       protocol: 'openai-compatible',
       contextWindow: 262144,
+      priceMode: 'free',
     },
   ],
   activeProviderId: 'wetocode-free',
@@ -62,6 +67,78 @@ const DEFAULT_SETTINGS = {
     reservedTokens: 16000,
   },
   autoUpdate: true,
+  modelFavorites: [],
+  onboardingCompleted: false,
+  experienceMode: 'beginner',
+}
+
+function clearModelRegistryCache() {
+  modelRegistryCache = undefined
+}
+
+function providerForRegistry(provider) {
+  return { ...provider, hasApiKey: Boolean(provider.apiKeyEncrypted) }
+}
+
+function registryCacheKey(settings, projectPath) {
+  return JSON.stringify({
+    projectPath: projectPath || '',
+    providers: settings.providers.map((provider) => ({
+      id: provider.id, providerId: provider.providerId, model: provider.model, baseUrl: provider.baseUrl,
+      protocol: provider.protocol, priceMode: provider.priceMode, hasApiKey: Boolean(provider.apiKeyEncrypted),
+    })),
+  })
+}
+
+async function discoverRegistryModels(projectPath, refresh = false) {
+  const settings = readSettings()
+  const authorizedProject = projectPath && isAuthorizedProject(settings, projectPath) ? path.resolve(projectPath) : undefined
+  const cacheKey = registryCacheKey(settings, authorizedProject)
+  if (!refresh && modelRegistryCache?.key === cacheKey && modelRegistryCache.expiresAt > Date.now()) {
+    return { ...modelRegistryCache.result, cached: true, favorites: settings.modelFavorites || [] }
+  }
+
+  const models = []
+  const errors = []
+  for (const storedProvider of settings.providers) {
+    const provider = providerForRegistry(storedProvider)
+    const fallback = configuredModel(provider)
+    models.push(fallback)
+    try {
+      if (provider.kind === 'custom' && provider.protocol === 'openai-compatible' && provider.baseUrl) {
+        if (fallback.authRequired) {
+          fallback.availability = 'not_configured'
+          continue
+        }
+        const discovered = await discoverOpenAICompatibleModels(provider, decryptSecret(provider.apiKeyEncrypted))
+        if (!discovered.length) throw new Error('服务返回了空模型列表。')
+        models.push(...discovered.map((model) => modelFromOpenAI(provider, model)))
+        continue
+      }
+      if (!authorizedProject) continue
+      const service = await ensureAgentServer(authorizedProject, storedProvider, customProviderConfig(storedProvider, settings))
+      const result = resultData(await service.client.model.list())
+      const discovered = (Array.isArray(result) ? result : result?.data || []).filter((model) => model.providerID === provider.providerId)
+      if (!discovered.length) throw new Error('OpenCode 没有返回此服务的模型。')
+      models.push(...discovered.map((model) => modelFromOpenCode(provider, model)))
+    } catch (error) {
+      errors.push({
+        configurationId: provider.id,
+        providerName: provider.name,
+        message: String(error?.message || error || '模型发现失败').replaceAll(decryptSecret(provider.apiKeyEncrypted), '').slice(0, 240),
+      })
+    }
+  }
+
+  const result = {
+    models: uniqueModels(models),
+    refreshedAt: Date.now(),
+    cached: false,
+    errors,
+    favorites: settings.modelFavorites || [],
+  }
+  modelRegistryCache = { key: cacheKey, expiresAt: Date.now() + CACHE_TTL_MS, result }
+  return result
 }
 
 function settingsPath() {
@@ -222,14 +299,16 @@ function readSettings() {
       ...saved,
       accessMode: normalizeAccessMode(saved.accessMode),
       reasoningEffort: ['off', 'high', 'max'].includes(saved.reasoningEffort) ? saved.reasoningEffort : 'max',
+      experienceMode: saved.experienceMode === 'professional' ? 'professional' : 'beginner',
       appearance: normalizeAppearance(saved.appearance),
       context: { ...DEFAULT_SETTINGS.context, ...(saved.context || {}) },
       providers: Array.isArray(saved.providers) && saved.providers.length
         ? saved.providers.map((provider) => ({
-            ...provider,
-            name: provider.id === 'wetocode-free' ? '公共免费模型' : provider.name,
-            protocol: normalizeProviderProtocol(provider.protocol, provider.providerId),
-          }))
+          ...provider,
+          name: provider.id === 'wetocode-free' ? '公共免费模型' : provider.name,
+          protocol: normalizeProviderProtocol(provider.protocol, provider.providerId),
+          priceMode: provider.id === 'wetocode-free' ? 'free' : ['free', 'paid'].includes(provider.priceMode) ? provider.priceMode : 'unknown',
+        }))
         : DEFAULT_SETTINGS.providers,
     }
   } catch {
@@ -300,6 +379,12 @@ function sanitizeSettings(settings) {
       keyStorage: isSecureStorageAvailable() ? '系统密钥环加密' : '安全密钥环不可用',
     },
   }
+}
+
+function nativeThemeSource(theme) {
+  if (theme === 'system') return 'system'
+  if (['dark', 'wetocode-dark', 'forest-care'].includes(theme)) return 'dark'
+  return 'light'
 }
 
 function findOpenCode() {
@@ -1448,7 +1533,7 @@ async function startPreview(projectPath, input = {}) {
 
 function createWindow() {
   const appearance = readSettings().appearance
-  nativeTheme.themeSource = appearance.theme
+  nativeTheme.themeSource = nativeThemeSource(appearance.theme)
   const window = new BrowserWindow({
     width: Number(process.env.WETOCODE_WINDOW_WIDTH) || 1480,
     height: Number(process.env.WETOCODE_WINDOW_HEIGHT) || 940,
@@ -1565,6 +1650,23 @@ function registerIpc() {
     }
   })
   ipcMain.handle('app:engine-status', () => opencodeVersion())
+  ipcMain.handle('app:environment-doctor', async (_event, projectPath) => {
+    const settings = readSettings()
+    const project = projectPath && isAuthorizedProject(settings, projectPath) ? projectPath : undefined
+    return environmentReport({ platform: process.platform, projectPath: project, engine: await opencodeVersion(), providers: sanitizeSettings(settings).providers }, execFileAsync)
+  })
+  ipcMain.handle('settings:set-onboarding-complete', (_event, complete) => {
+    const settings = readSettings()
+    settings.onboardingCompleted = Boolean(complete)
+    writeSettings(settings)
+    return sanitizeSettings(settings)
+  })
+  ipcMain.handle('settings:set-experience-mode', (_event, mode) => {
+    const settings = readSettings()
+    settings.experienceMode = mode === 'professional' ? 'professional' : 'beginner'
+    writeSettings(settings)
+    return sanitizeSettings(settings)
+  })
 
   ipcMain.handle('project:choose', async () => {
     const result = await dialog.showOpenDialog({
@@ -1780,6 +1882,7 @@ function registerIpc() {
       protocol: normalizeProviderProtocol(input.protocol, input.providerId),
       contextWindow: Math.min(10_000_000, Math.max(8_192, Number(input.contextWindow) || 128000)),
       outputLimit: Math.min(1_000_000, Math.max(1_024, Number(input.outputLimit) || 16384)),
+      priceMode: ['free', 'paid'].includes(input.priceMode) ? input.priceMode : 'unknown',
       apiKeyEncrypted: input.apiKey
         ? encryptSecret(String(input.apiKey).trim())
         : current?.apiKeyEncrypted || '',
@@ -1793,6 +1896,7 @@ function registerIpc() {
     settings.providers = [provider, ...settings.providers.filter((item) => item.id !== id)]
     settings.activeProviderId = id
     writeSettings(settings)
+    clearModelRegistryCache()
     if (!activeRuns.size) stopAgentServer()
     return sanitizeSettings(settings)
   })
@@ -1816,6 +1920,7 @@ function registerIpc() {
     settings.providers = settings.providers.filter((item) => item.id !== id)
     if (settings.activeProviderId === id) settings.activeProviderId = 'wetocode-free'
     writeSettings(settings)
+    clearModelRegistryCache()
     if (!activeRuns.size) stopAgentServer()
     return sanitizeSettings(settings)
   })
@@ -1827,6 +1932,50 @@ function registerIpc() {
     writeSettings(settings)
     if (!activeRuns.size) stopAgentServer()
     return sanitizeSettings(settings)
+  })
+
+  ipcMain.handle('model:list', (_event, projectPath, refresh) => discoverRegistryModels(projectPath, Boolean(refresh)))
+  ipcMain.handle('model:use', (_event, input) => {
+    const settings = readSettings()
+    const provider = settings.providers.find((item) => item.id === input?.configurationId)
+    const modelId = String(input?.modelId || '').trim().slice(0, 300)
+    if (!provider || !modelId) throw new Error('选择的模型不存在或所属服务已被删除。')
+    provider.model = modelId
+    const contextWindow = Number(input?.contextWindow)
+    if (Number.isFinite(contextWindow) && contextWindow >= 8192) provider.contextWindow = Math.min(10_000_000, Math.round(contextWindow))
+    settings.activeProviderId = provider.id
+    writeSettings(settings)
+    clearModelRegistryCache()
+    if (!activeRuns.size) stopAgentServer()
+    return sanitizeSettings(settings)
+  })
+  ipcMain.handle('model:test', async (_event, input) => {
+    const settings = readSettings()
+    const provider = settings.providers.find((item) => item.id === input?.configurationId)
+    const modelId = String(input?.modelId || '').trim()
+    if (!provider || !modelId) throw new Error('选择的模型不存在或所属服务已被删除。')
+    if (provider.kind === 'custom') {
+      return testProviderConnection({ ...provider, model: modelId }, decryptSecret(provider.apiKeyEncrypted))
+    }
+    const projectPath = settings.recentProjects.find((item) => fs.existsSync(item))
+    if (!projectPath) throw new Error('请先打开一个项目，再测试此模型。')
+    const startedAt = Date.now()
+    const service = await ensureAgentServer(projectPath, { ...provider, model: modelId }, customProviderConfig({ ...provider, model: modelId }, settings))
+    const result = resultData(await service.client.model.list())
+    const models = Array.isArray(result) ? result : result?.data || []
+    if (!models.some((model) => model.providerID === provider.providerId && model.id === modelId)) throw new Error('服务当前没有返回这个模型。')
+    return { ok: true, status: 200, latencyMs: Date.now() - startedAt, message: '连接成功，模型目录中可以使用此模型。' }
+  })
+  ipcMain.handle('model:favorite', (_event, modelId, favorite) => {
+    const settings = readSettings()
+    const id = String(modelId || '').trim().slice(0, 500)
+    if (!id) throw new Error('模型标识无效。')
+    const favorites = new Set(Array.isArray(settings.modelFavorites) ? settings.modelFavorites : [])
+    if (favorite) favorites.add(id)
+    else favorites.delete(id)
+    settings.modelFavorites = [...favorites].slice(0, 300)
+    writeSettings(settings)
+    return settings.modelFavorites
   })
 
   ipcMain.handle('settings:set-access-mode', (_event, accessMode) => {
@@ -1846,7 +1995,36 @@ function registerIpc() {
     const settings = readSettings()
     settings.appearance = updateAppearance(settings.appearance, patch)
     writeSettings(settings)
-    nativeTheme.themeSource = settings.appearance.theme
+    nativeTheme.themeSource = nativeThemeSource(settings.appearance.theme)
+    BrowserWindow.fromWebContents(event.sender)?.webContents.setZoomFactor(settings.appearance.zoom)
+    return sanitizeSettings(settings)
+  })
+  ipcMain.handle('appearance:choose-background', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择本地背景图片',
+      properties: ['openFile'],
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return pathToFileURL(result.filePaths[0]).href
+  })
+  ipcMain.handle('appearance:export', async () => {
+    const result = await dialog.showSaveDialog({ title: '导出 WetoCode 主题', defaultPath: 'wetocode-theme.json', filters: [{ name: 'WetoCode 主题', extensions: ['json'] }] })
+    if (result.canceled || !result.filePath) return false
+    const payload = { format: 'wetocode-theme', version: 1, appearance: readSettings().appearance }
+    fs.writeFileSync(result.filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
+    return true
+  })
+  ipcMain.handle('appearance:import', async (event) => {
+    const result = await dialog.showOpenDialog({ title: '导入 WetoCode 主题', properties: ['openFile'], filters: [{ name: 'WetoCode 主题', extensions: ['json'] }] })
+    if (result.canceled || !result.filePaths[0]) return null
+    let parsed
+    try { parsed = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8')) } catch { throw new Error('主题文件不是有效的 JSON。') }
+    if (!parsed || parsed.format !== 'wetocode-theme' || parsed.version !== 1 || !parsed.appearance) throw new Error('不是受支持的 WetoCode 主题文件。')
+    const settings = readSettings()
+    settings.appearance = normalizeAppearance(parsed.appearance)
+    writeSettings(settings)
+    nativeTheme.themeSource = nativeThemeSource(settings.appearance.theme)
     BrowserWindow.fromWebContents(event.sender)?.webContents.setZoomFactor(settings.appearance.zoom)
     return sanitizeSettings(settings)
   })

@@ -28,6 +28,7 @@
     "smoke:electron-permission": "node scripts/smoke-electron-permission.mjs",
     "smoke:pty": "node scripts/smoke-opencode-pty.mjs",
     "smoke:electron-terminal": "node scripts/smoke-electron-terminal.mjs",
+    "smoke:electron-onboarding": "node scripts/smoke-electron-onboarding.mjs",
     "smoke:worktree": "node scripts/smoke-opencode-worktree.mjs",
     "smoke:electron-worktree": "node scripts/smoke-electron-worktree.mjs",
     "smoke:electron-attachment": "node scripts/smoke-electron-attachment.mjs",
