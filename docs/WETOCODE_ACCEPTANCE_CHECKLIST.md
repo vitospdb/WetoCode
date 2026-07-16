@@ -20,15 +20,15 @@ Legend: `done` = implemented; `verified` = passed in this workspace; `pending` =
 | Key storage/redaction | verified | Electron safeStorage boundary and sanitized renderer settings are present. |
 | Five original themes/customization | verified | Weto dark, cloud light, strawberry cream, minimal silver and forest care; colors, terminal palette/size, local background, import/export and restart persistence are implemented. |
 | Beginner first-run flow/environment doctor | verified | Five-step Chinese onboarding and read-only environment doctor passed Electron smoke. |
-| Unit tests | verified | 19 files / 79 tests passed on 2026-07-16. |
+| Unit tests | verified | 20 files / 81 tests passed on 2026-07-16. |
 | Lint and production build | verified | Passed after all changes on 2026-07-16. |
 | Electron terminal UI smoke | verified | Real terminal, IME, paste, shell, resize/maximize, model-center and theme checks passed on 2026-07-16. |
 | Windows desktop build | verified | Native Windows 11 NSIS build of commit `3f2df52` produced the final x64 installer. |
 | Windows child-process cleanup | verified | Packaged failure smoke returned the expected Chinese timeout and passed its post-exit PID assertion; the final engine path had zero CIM processes and zero TCP records. Windows aborts the stalled PTY request and checks the complete OpenCode process tree even after Node reports an exit. |
-| Final Windows normal-path PTY rerun | blocked | An older pre-fix package still owns stale PID 10336/port 8243; CIM terminate returns access denied (`2`) and OpenCode PTY creation stalls across isolated data directories. The earlier packaged workflow passed; repeat the final-package normal-path smoke after a clean Windows login. |
+| Final Windows normal-path PTY rerun | blocked | This Windows login session still reports Winsock `10108`; isolated default, CMD and PowerShell PTY requests all stall after `conhost.exe` starts. Each probe and final-package failure path cleaned up fully. The earlier packaged workflow passed; repeat the final-package normal path after a clean Windows login.
 
 ## Packaging Note
 
 Native Windows 11 packaging was run with Windows Node 22 and Electron Builder. The final installer at `C:\WetoCodeBuild-7a06898\release-final-abort\WetoCode-Setup-0.2.8-x64.exe` has SHA-256 `7ea5c5c0f5743c3c1716e8e02ffba507de1c0339bf601848d504fe0e5e1885ec`.
 
-The current Windows session reports `WSALookupServiceBegin failed with: 10108` and contains stale kernel process/socket records from an earlier pre-fix package. Isolated XDG directories prevent configuration/database overlap, but cannot repair that system state. The final package returns `终端启动超时，请检查本地网络服务后重试。`, restores the UI to `未连接`, and leaves no new process or listener. A reboot or Winsock reset is intentionally not performed without explicit approval.
+The current Windows session reports `WSALookupServiceBegin failed with: 10108`. OpenCode health and SSE endpoints respond normally, but isolated default, CMD and PowerShell PTY creation all stall after a child `conhost.exe` starts, so this is not a model, project-data or shell-selection failure. The final package returns `终端启动超时，请检查本地网络服务后重试。`, restores the UI to `未连接`, and leaves no new process or listener. A reboot or Winsock reset is intentionally not performed without explicit approval.

@@ -17,7 +17,7 @@ Updated: 2026-07-16 (Asia/Shanghai)
 2. Completed: provider-backed Model Registry with five-minute cache, strict price states, connection tests, favorites and a model-center view.
 3. Completed: token-based original presets, terminal typography/palette overrides, local background selection, and validated import/export.
 4. Completed: default first-run flow and read-only Chinese environment diagnostics. No system configuration is modified automatically.
-5. Completed: lint, typecheck/build, 79 unit tests, real PTY and Electron terminal/onboarding smoke tests pass. A native Windows 11 host produced the x64 NSIS installer and ran the packaged terminal workflow.
+5. Completed: lint, typecheck/build, 81 unit tests, real PTY and Electron terminal/onboarding smoke tests pass. A native Windows 11 host produced the x64 NSIS installer and ran the packaged terminal workflow.
 6. Completed: Windows service startup now uses a dynamic loopback port, accepts startup output from stderr, stops the complete OpenCode process tree before closing ConPTY sockets, and bounds service/PTY requests with Chinese timeout errors and cleanup.
 
 ## Constraints
@@ -25,4 +25,4 @@ Updated: 2026-07-16 (Asia/Shanghai)
 - No replacement of Electron, OpenCode session handling or the secure-key boundary.
 - No static list may be presented as live free-model discovery.
 - Native Windows packaging must continue to run through `npm run dist:win`; cross-compiling from Linux/WSL is not treated as packaging evidence.
-- The current Windows login session contains an older pre-fix kernel/CIM process record that cannot be terminated (`Win32_Process.Terminate` returns `2`). Final-package failure cleanup is verified at zero new processes/listeners, but its normal PTY path must be repeated after a clean Windows login; no system network reset or reboot is performed silently.
+- The current Windows login session reports Winsock `10108`, and isolated ConPTY probes stall after `conhost.exe` starts for default, CMD and PowerShell shells. Final-package failure cleanup is verified at zero new processes/listeners, but its normal PTY path must be repeated after a clean Windows login; no system network reset or reboot is performed silently.

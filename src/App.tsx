@@ -76,6 +76,7 @@ import remarkGfm from 'remark-gfm'
 import { exportedToMessages, partToTool } from './lib/session'
 import { mergeStreamText } from './lib/stream-text'
 import { scrollToLatest } from './lib/scroll'
+import { userErrorMessage } from './lib/error-message'
 import { mockBridge } from './mockBridge'
 import type {
   AccessMode,
@@ -1520,7 +1521,7 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
         fitTerminalRef.current()
         terminalRef.current?.focus()
       } catch (error) {
-        if (!cancelled) onError((error as Error).message)
+        if (!cancelled) onError(userErrorMessage(error, '终端启动失败，请重试。'))
       } finally {
         if (!cancelled) setStarting(false)
       }

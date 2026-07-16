@@ -199,7 +199,7 @@ try {
   await client.evaluate(`[...document.querySelectorAll('.header-actions button')].find((button) => button.title === '打开终端').click()`)
   terminalWorkflow: {
     if (expectedTerminalError) {
-      await until(client, `document.querySelector('.toast')?.innerText.includes(${JSON.stringify(expectedTerminalError)}) && document.querySelector('.terminal-toolbar')?.innerText.includes('未连接')`, 'expected Chinese terminal error', 60_000)
+      await until(client, `document.querySelector('.toast')?.innerText.replace('×', '').trim() === ${JSON.stringify(expectedTerminalError)} && document.querySelector('.terminal-toolbar')?.innerText.includes('未连接')`, 'expected Chinese terminal error', 60_000)
       result = { ok: true, expectedFailure: expectedTerminalError, terminalStatus: '未连接', cleanup: 'verified' }
       break terminalWorkflow
     }
