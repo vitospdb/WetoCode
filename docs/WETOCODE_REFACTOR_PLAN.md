@@ -25,4 +25,4 @@ Updated: 2026-07-16 (Asia/Shanghai)
 - No replacement of Electron, OpenCode session handling or the secure-key boundary.
 - No static list may be presented as live free-model discovery.
 - Native Windows packaging must continue to run through `npm run dist:win`; cross-compiling from Linux/WSL is not treated as packaging evidence.
-- The current Windows login session contains an older kernel/CIM process record that cannot be terminated (`Win32_Process.Terminate` returns `2`). Zero-residue lifecycle verification must be repeated after a clean Windows login; no system network reset or reboot is performed silently.
+- The current Windows login session contains an older pre-fix kernel/CIM process record that cannot be terminated (`Win32_Process.Terminate` returns `2`). Final-package failure cleanup is verified at zero new processes/listeners, but its normal PTY path must be repeated after a clean Windows login; no system network reset or reboot is performed silently.

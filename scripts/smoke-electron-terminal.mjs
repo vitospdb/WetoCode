@@ -20,6 +20,7 @@ await fs.writeFile(path.join(userData, 'settings.json'), JSON.stringify({
 }, null, 2))
 
 const binary = process.env.WETOCODE_PACKAGED_BINARY || path.join(root, 'node_modules', 'electron', 'dist', 'electron')
+const expectedTerminalError = process.env.WETOCODE_EXPECT_TERMINAL_ERROR || ''
 const packagedEngine = process.env.WETOCODE_PACKAGED_BINARY
   ? path.join(path.dirname(binary), 'resources', 'bin', 'opencode.exe')
   : undefined
@@ -187,6 +188,12 @@ try {
     return Boolean(button && !button.disabled)
   })()`, 'restored project workspace')
   await client.evaluate(`[...document.querySelectorAll('.header-actions button')].find((button) => button.title === '打开终端').click()`)
+  terminalWorkflow: {
+    if (expectedTerminalError) {
+      await until(client, `document.querySelector('.toast')?.innerText.includes(${JSON.stringify(expectedTerminalError)}) && document.querySelector('.terminal-toolbar')?.innerText.includes('未连接')`, 'expected Chinese terminal error', 60_000)
+      console.log(JSON.stringify({ ok: true, expectedFailure: expectedTerminalError, terminalStatus: '未连接', cleanup: 'checked-after-exit' }, null, 2))
+      break terminalWorkflow
+    }
   await until(client, `document.querySelector('.terminal-toolbar')?.innerText.includes('运行中')`, 'running terminal', 60_000)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent.includes('WetoCode CLI')`, 'embedded CLI mode', 10_000)
   const cliPtyId = await client.evaluate(`document.querySelector('.terminal-panel')?.dataset.ptyId`)
@@ -304,6 +311,7 @@ try {
   if (!modelCard.includes('Mimo') && !modelCard.includes('mimo')) throw new Error(`Configured model is missing from the registry: ${modelCard}`)
   await client.evaluate(`document.querySelector('.detail-panel button[title="关闭"]').click()`)
   console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', localizedTui: true, chineseIme: 'WETOCODE_IME_OK', contextMenu: ['复制', '粘贴'], clipboardPaste: 'WETOCODE_PASTE_OK', terminalWorkspace: ['resize', 'maximize', 'restore'], modelRegistry: 'configured-model-visible', theme: 'strawberry-cream', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
+  }
 } finally {
   await client?.evaluate('window.close()').catch(() => {})
   client?.close()
