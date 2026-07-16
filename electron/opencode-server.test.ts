@@ -11,6 +11,7 @@ function childProcess() {
     stdout: PassThrough
     stderr: PassThrough
     kill: ReturnType<typeof vi.fn>
+    pid?: number
     exitCode: number | null
     signalCode: string | null
   }
@@ -32,9 +33,21 @@ describe('OpenCode Server lifecycle', () => {
     expect(spawnProcess).toHaveBeenCalledWith('/bin/opencode', ['serve', '--hostname=127.0.0.1', '--port=0'], expect.objectContaining({ cwd: '/project', windowsHide: true }))
   })
 
-  it('terminates a running server', () => {
+  it('terminates a running server with signals outside Windows', () => {
     const child = childProcess()
-    stopChild(child)
+    stopChild(child, { platform: 'linux' })
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+  })
+
+  it('terminates the complete process tree on Windows', () => {
+    const child = childProcess()
+    child.pid = 42731
+    const killProcessTree = vi.fn().mockReturnValue({ status: 0 })
+    stopChild(child, { platform: 'win32', killProcessTree })
+    expect(killProcessTree).toHaveBeenCalledWith('taskkill.exe', ['/pid', '42731', '/t', '/f'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    })
+    expect(child.kill).not.toHaveBeenCalled()
   })
 })

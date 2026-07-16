@@ -1,4 +1,4 @@
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 
 function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnProcess = spawn }) {
   const child = spawnProcess(binary, ['serve', '--hostname=127.0.0.1', '--port=0'], {
@@ -43,8 +43,15 @@ function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnProcess =
   })
 }
 
-function stopChild(child) {
+function stopChild(child, { platform = process.platform, killProcessTree = spawnSync } = {}) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return
+  if (platform === 'win32' && Number.isInteger(child.pid)) {
+    const result = killProcessTree('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    })
+    if (!result?.error && result?.status === 0) return
+  }
   child.kill('SIGTERM')
   const timer = setTimeout(() => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')

@@ -20,6 +20,9 @@ await fs.writeFile(path.join(userData, 'settings.json'), JSON.stringify({
 }, null, 2))
 
 const binary = process.env.WETOCODE_PACKAGED_BINARY || path.join(root, 'node_modules', 'electron', 'dist', 'electron')
+const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
+if (process.env.WETOCODE_PACKAGED_BINARY) delete childEnv.OPENCODE_BIN
+else childEnv.OPENCODE_BIN = path.join(root, 'node_modules', 'opencode-ai', 'bin', 'opencode.exe')
 const child = spawn(binary, [
   `--remote-debugging-port=${port}`,
   `--user-data-dir=${userData}`,
@@ -27,7 +30,7 @@ const child = spawn(binary, [
   ...(process.env.WETOCODE_PACKAGED_BINARY ? [] : ['.']),
 ], {
   cwd: root,
-  env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0', OPENCODE_BIN: path.join(root, 'node_modules', 'opencode-ai', 'bin', 'opencode.exe') },
+  env: childEnv,
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 let logs = ''
@@ -113,6 +116,39 @@ async function waitForTerminalText(client, marker, label, timeout = 90_000) {
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   throw new Error(`Timed out waiting for ${label}. ${logs}`)
+}
+
+async function waitForExit(timeout = 10_000) {
+  if (child.exitCode !== null || child.signalCode !== null) return true
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.removeListener('exit', onExit)
+      resolve(false)
+    }, timeout)
+    const onExit = () => {
+      clearTimeout(timer)
+      resolve(true)
+    }
+    child.once('exit', onExit)
+  })
+}
+
+async function stopProcessTree() {
+  if (await waitForExit(250)) return
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => {
+      const killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      })
+      killer.once('error', resolve)
+      killer.once('exit', resolve)
+    })
+  } else {
+    child.kill('SIGTERM')
+    if (!await waitForExit(3_000)) child.kill('SIGKILL')
+  }
+  await waitForExit(5_000)
 }
 
 let client
@@ -238,9 +274,8 @@ try {
   await client.evaluate(`document.querySelector('.detail-panel button[title="关闭"]').click()`)
   console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', localizedTui: true, chineseIme: 'WETOCODE_IME_OK', contextMenu: ['复制', '粘贴'], clipboardPaste: 'WETOCODE_PASTE_OK', terminalWorkspace: ['resize', 'maximize', 'restore'], modelRegistry: 'configured-model-visible', theme: 'strawberry-cream', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
 } finally {
+  await client?.evaluate('window.close()').catch(() => {})
   client?.close()
-  child.kill('SIGTERM')
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-  await fs.rm(temporaryRoot, { recursive: true, force: true })
+  if (!await waitForExit()) await stopProcessTree()
+  await fs.rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
 }
