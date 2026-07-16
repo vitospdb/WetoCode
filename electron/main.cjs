@@ -10,7 +10,7 @@ const { normalizeAccessMode, permissionForAccessMode } = require('./access-mode.
 const { enrichSessions, normalizeSessionMetadata, updateSessionMetadata } = require('./session-metadata.cjs')
 const { DEFAULT_APPEARANCE, normalizeAppearance, updateAppearance } = require('./appearance.cjs')
 const { countDiffLines, isSafeRelativePath, parseGitStatus } = require('./git-tools.cjs')
-const { startOpencodeServer, stopChild, stopProcessTree, withAbortTimeout, withTimeout } = require('./opencode-server.cjs')
+const { startOpencodeServer, stopChild, stopProcessTree, withTimeout } = require('./opencode-server.cjs')
 const { MAX_ATTACHMENTS_BYTES, readAttachmentFile, readDataAttachment } = require('./attachment-tools.cjs')
 const { createGoalState, goalBudgetReason, normalizeGoals, updateGoalState } = require('./goal-state.cjs')
 const { emptyUsage, normalizeUsage, recordUsage, usageSummary } = require('./usage-stats.cjs')
@@ -2392,21 +2392,21 @@ function registerIpc() {
     let pty
     let token
     try {
-      pty = resultData(await withAbortTimeout((signal) => service.client.pty.create(terminalPtyInput({
+      pty = resultData(await withTimeout(service.client.pty.create(terminalPtyInput({
         mode,
         binary: findOpenCode(),
         serviceUrl: service.url,
         projectPath,
-      }), { signal }), 15_000, '终端启动超时，请检查本地网络服务后重试。'))
+      })), 15_000, '终端启动超时，请检查本地网络服务后重试。'))
       if (size?.rows && size?.cols) {
-        await withAbortTimeout((signal) => service.client.pty.update({
+        await withTimeout(service.client.pty.update({
           ptyID: pty.id,
           size: { rows: Math.max(2, size.rows), cols: Math.max(20, size.cols) },
-        }, { signal }), 10_000, '终端尺寸同步超时，请重新打开终端。')
+        }), 10_000, '终端尺寸同步超时，请重新打开终端。')
       }
-      token = resultData(await withAbortTimeout((signal) => service.client.pty.connectToken(
+      token = resultData(await withTimeout(service.client.pty.connectToken(
         { ptyID: pty.id },
-        { headers: { 'x-opencode-ticket': '1' }, signal },
+        { headers: { 'x-opencode-ticket': '1' } },
       ), 10_000, '终端连接授权超时，请重新打开终端。'))
     } catch (error) {
       await stopAgentServer(service)

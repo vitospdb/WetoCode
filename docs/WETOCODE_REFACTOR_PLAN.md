@@ -17,7 +17,7 @@ Updated: 2026-07-16 (Asia/Shanghai)
 2. Completed: provider-backed Model Registry with five-minute cache, strict price states, connection tests, favorites and a model-center view.
 3. Completed: token-based original presets, terminal typography/palette overrides, local background selection, and validated import/export.
 4. Completed: default first-run flow and read-only Chinese environment diagnostics. No system configuration is modified automatically.
-5. Completed: lint, typecheck/build, 81 unit tests, real PTY and Electron terminal/onboarding smoke tests pass. A native Windows 11 host produced the x64 NSIS installer and ran the packaged terminal workflow.
+5. Completed: lint, typecheck/build, 80 unit tests, real PTY and Electron terminal/onboarding smoke tests pass. A native Windows 11 host produced the x64 NSIS installer and ran the packaged terminal workflow.
 6. Completed: Windows service startup now uses a dynamic loopback port, accepts startup output from stderr, stops the complete OpenCode process tree before closing ConPTY sockets, and bounds service/PTY requests with Chinese timeout errors and cleanup.
 
 ## Constraints

@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { startOpencodeServer, stopChild, stopProcessTree, withAbortTimeout, withTimeout } = require('./opencode-server.cjs')
+const { startOpencodeServer, stopChild, stopProcessTree, withTimeout } = require('./opencode-server.cjs')
 
 function childProcess() {
   const child = new EventEmitter() as EventEmitter & {
@@ -117,19 +117,4 @@ describe('OpenCode Server lifecycle', () => {
     vi.useRealTimers()
   })
 
-  it('aborts and settles a stalled request before reporting its timeout', async () => {
-    vi.useFakeTimers()
-    let aborted = false
-    const pending = withAbortTimeout((signal: AbortSignal) => new Promise((_, reject) => {
-      signal.addEventListener('abort', () => {
-        aborted = true
-        reject(new Error('aborted'))
-      }, { once: true })
-    }), 12_000, '终端启动超时。')
-    const assertion = expect(pending).rejects.toThrow('终端启动超时。')
-    await vi.advanceTimersByTimeAsync(12_000)
-    await assertion
-    expect(aborted).toBe(true)
-    vi.useRealTimers()
-  })
 })

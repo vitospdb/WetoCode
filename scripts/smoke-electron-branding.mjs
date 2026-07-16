@@ -1,12 +1,20 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wetocode-branding-ui-'))
 const userData = path.join(temporaryRoot, 'user-data')
 const projectPath = path.join(temporaryRoot, 'project')
-const port = 9960 + Math.floor(Math.random() * 30)
+const port = await new Promise((resolve, reject) => {
+  const server = net.createServer()
+  server.once('error', reject)
+  server.listen(0, '127.0.0.1', () => {
+    const address = server.address()
+    server.close((error) => error ? reject(error) : resolve(address.port))
+  })
+})
 await fs.mkdir(userData, { recursive: true })
 await fs.mkdir(projectPath)
 await fs.writeFile(path.join(userData, 'settings.json'), JSON.stringify({
@@ -81,6 +89,7 @@ let client
 try {
   client = cdp(await debuggerUrl())
   await until(client, `Boolean(document.querySelector('.app-shell'))`, 'application bootstrap')
+  await until(client, `document.querySelector('.welcome')?.innerText.includes('更符合中国开发者使用习惯')`, 'welcome positioning')
   const initial = await client.evaluate(`({
     brand: document.querySelector('.brand span')?.textContent,
     brandFits: document.querySelector('.brand span')?.scrollWidth <= document.querySelector('.brand span')?.clientWidth,
