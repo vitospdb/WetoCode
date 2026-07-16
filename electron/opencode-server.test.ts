@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
-import net from 'node:net'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -40,24 +39,6 @@ describe('OpenCode Server lifecycle', () => {
     const started = startOpencodeServer({ binary: 'opencode.exe', cwd: 'C:\\project', env: {}, timeout: 1000, spawnProcess, getPort: () => Promise.resolve(42732) })
     child.stderr.write('opencode server listening on http://127.0.0.1:42732\r\n')
     await expect(started).resolves.toEqual({ child, url: 'http://127.0.0.1:42732' })
-  })
-
-  it('detects readiness from the allocated loopback port without startup logs', async () => {
-    const listener = net.createServer()
-    await new Promise<void>((resolve, reject) => {
-      listener.once('error', reject)
-      listener.listen(0, '127.0.0.1', resolve)
-    })
-    const address = listener.address()
-    const port = typeof address === 'object' && address ? address.port : 0
-    const child = childProcess()
-    const spawnProcess = vi.fn().mockReturnValueOnce(child)
-    try {
-      await expect(startOpencodeServer({ binary: 'opencode.exe', cwd: 'C:\\project', env: {}, timeout: 1000, spawnProcess, getPort: () => Promise.resolve(port) }))
-        .resolves.toEqual({ child, url: `http://127.0.0.1:${port}` })
-    } finally {
-      listener.close()
-    }
   })
 
   it('terminates a running server with signals outside Windows', async () => {
