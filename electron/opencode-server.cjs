@@ -26,8 +26,11 @@ async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnPro
   return new Promise((resolve, reject) => {
     let output = ''
     let settled = false
+    let probe
     const cleanup = () => {
       clearTimeout(timer)
+      clearInterval(probeTimer)
+      probe?.destroy()
       child.stdout.removeListener('data', onData)
       child.stderr.removeListener('data', onData)
       child.removeListener('error', onError)
@@ -48,9 +51,28 @@ async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnPro
       cleanup()
       resolve({ child, url: match[1] })
     }
+    const probePort = () => {
+      if (settled || probe) return
+      probe = net.createConnection({ host: '127.0.0.1', port })
+      probe.once('connect', () => {
+        probe?.destroy()
+        probe = undefined
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve({ child, url: `http://127.0.0.1:${port}` })
+      })
+      probe.once('error', () => {
+        probe?.destroy()
+        probe = undefined
+      })
+    }
     const onError = (error) => fail(error)
     const onExit = (code) => fail(new Error(`本地执行服务启动失败（代码 ${code}）。${output.trim() ? `\n${output.trim()}` : ''}`))
     const timer = setTimeout(() => fail(new Error('本地执行服务启动超时。')), timeout)
+    const probeTimer = setInterval(probePort, 100)
+    probeTimer.unref?.()
+    probePort()
 
     child.stdout.on('data', onData)
     child.stderr.on('data', onData)
