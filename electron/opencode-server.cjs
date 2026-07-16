@@ -13,6 +13,16 @@ function availableLoopbackPort() {
   })
 }
 
+function withTimeout(operation, timeout, message = '本地执行服务请求超时，请重试。') {
+  let timer
+  return Promise.race([
+    Promise.resolve(operation),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeout)
+    }),
+  ]).finally(() => clearTimeout(timer))
+}
+
 async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnProcess = spawn, getPort = availableLoopbackPort }) {
   const port = await getPort()
   const child = spawnProcess(binary, ['serve', '--hostname=127.0.0.1', `--port=${port}`], {
@@ -91,4 +101,4 @@ async function stopChild(child, { platform = process.platform, killProcessTree =
   return waitForChildExit(child, 3000)
 }
 
-module.exports = { availableLoopbackPort, startOpencodeServer, stopChild, stopProcessTree, waitForChildExit }
+module.exports = { availableLoopbackPort, startOpencodeServer, stopChild, stopProcessTree, waitForChildExit, withTimeout }

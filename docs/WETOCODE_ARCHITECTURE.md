@@ -26,13 +26,15 @@ The terminal is an OpenCode PTY, not a browser emulation. The renderer sends xte
 
 Terminal workspace preferences are stored alongside appearance preferences: height, collapse/maximize state, font size and validated palette overrides. They never contain terminal input or server connection details.
 
-## Model Registry Target
+Each OpenCode service binds an ephemeral loopback port. Service subscription, PTY creation, initial resize and connection-token requests have bounded timeouts. A failed startup stops the owning service before returning a Chinese error, while normal Windows shutdown stops the service before closing ConPTY WebSockets to avoid orphaned children.
+
+## Model Registry
 
 The model registry will normalize OpenCode/provider discovery and user-configured OpenAI-compatible services into a single record. Provider adapters remain in the main process and own authentication, timeout, error formatting and secret redaction. The renderer receives only model metadata and availability, never API keys.
 
 `free` is a three-state pricing claim: confirmed free, paid, or unknown. Unknown pricing never enters the free filter. For OpenAI Compatible services, discovery calls their actual `/models` endpoint; for OpenCode services it uses the SDK model directory. A configured model remains visible as an explicit fallback when discovery fails.
 
-## Appearance Target
+## Appearance
 
 Themes are token sets applied by the application root. Terminal palette and typography derive from the active token set but may be explicitly overridden in persisted appearance settings. Theme configuration is validated before it is stored or imported. Local background images are selected by native file picker; remote image URLs are rejected.
 

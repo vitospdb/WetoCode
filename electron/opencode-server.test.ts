@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { startOpencodeServer, stopChild, stopProcessTree } = require('./opencode-server.cjs')
+const { startOpencodeServer, stopChild, stopProcessTree, withTimeout } = require('./opencode-server.cjs')
 
 function childProcess() {
   const child = new EventEmitter() as EventEmitter & {
@@ -76,5 +76,21 @@ describe('OpenCode Server lifecycle', () => {
       windowsHide: true,
       stdio: 'ignore',
     })
+  })
+
+  it('bounds a stalled service request with its Chinese error', async () => {
+    vi.useFakeTimers()
+    const pending = withTimeout(new Promise(() => {}), 12_000, '本地执行服务连接超时，请重试。')
+    const assertion = expect(pending).rejects.toThrow('本地执行服务连接超时，请重试。')
+    await vi.advanceTimersByTimeAsync(12_000)
+    await assertion
+    vi.useRealTimers()
+  })
+
+  it('clears the timeout after a service request succeeds', async () => {
+    vi.useFakeTimers()
+    await expect(withTimeout(Promise.resolve({ id: 'pty-1' }), 12_000, '不应超时')).resolves.toEqual({ id: 'pty-1' })
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
   })
 })
