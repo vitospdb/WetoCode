@@ -23,12 +23,12 @@ Legend: `done` = implemented; `verified` = passed in this workspace; `pending` =
 | Unit tests | verified | 20 files / 80 tests passed on 2026-07-16. |
 | Lint and production build | verified | Passed after all changes on 2026-07-16. |
 | Electron terminal UI smoke | verified | Real terminal, IME, paste, shell, resize/maximize, model-center and theme checks passed on 2026-07-16. |
-| Windows desktop build | verified | Native Windows 11 NSIS build of commit `3f2df52` produced the final x64 installer. |
-| Windows child-process cleanup | verified | Packaged failure smoke returned the expected Chinese timeout and passed its post-exit PID assertion; the final engine path had zero CIM processes and zero TCP records. Windows aborts the stalled PTY request and checks the complete OpenCode process tree even after Node reports an exit. |
+| Windows desktop build | verified | Native Windows 11 NSIS build of commit `d40e41a` produced the final x64 installer. |
+| Windows child-process cleanup | verified | Packaged failure smoke returned the exact Chinese timeout and passed its post-exit PID assertion; the final engine path had zero CIM processes and zero TCP records. Windows terminates the complete OpenCode process tree before request cancellation and checks it even after Node reports an exit. |
 | Final Windows normal-path PTY rerun | blocked | This Windows login session still reports Winsock `10108`; isolated default, CMD and PowerShell PTY requests all stall after `conhost.exe` starts. Each probe and final-package failure path cleaned up fully. The earlier packaged workflow passed; repeat the final-package normal path after a clean Windows login.
 
 ## Packaging Note
 
-Native Windows 11 packaging was run with Windows Node 22 and Electron Builder. The final installer at `C:\WetoCodeBuild-7a06898\release-final-abort\WetoCode-Setup-0.2.8-x64.exe` has SHA-256 `7ea5c5c0f5743c3c1716e8e02ffba507de1c0339bf601848d504fe0e5e1885ec`.
+Native Windows 11 packaging was run with Windows Node 22 and Electron Builder. The final installer at `C:\WetoCodeBuild-7a06898\release-delivery\WetoCode-Setup-0.2.8-x64.exe` has SHA-256 `ab633937317dfa297fc0f383e5df8928bf10a4c340a90514ba2a5128d40f9a33`.
 
 The current Windows session reports `WSALookupServiceBegin failed with: 10108`. OpenCode health and SSE endpoints respond normally, but isolated default, CMD and PowerShell PTY creation all stall after a child `conhost.exe` starts, so this is not a model, project-data or shell-selection failure. The final package returns `终端启动超时，请检查本地网络服务后重试。`, restores the UI to `未连接`, and leaves no new process or listener. A reboot or Winsock reset is intentionally not performed without explicit approval.
