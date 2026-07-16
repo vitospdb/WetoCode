@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { startOpencodeServer, stopChild, stopProcessTree, withTimeout } = require('./opencode-server.cjs')
+const { startOpencodeServer, stopChild, stopProcessTree, withAbortTimeout, withTimeout } = require('./opencode-server.cjs')
 
 function childProcess() {
   const child = new EventEmitter() as EventEmitter & {
@@ -79,6 +79,19 @@ describe('OpenCode Server lifecycle', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGKILL')
   })
 
+  it('still checks the Windows process tree after Node reports an exit', async () => {
+    const child = childProcess()
+    child.pid = 42731
+    child.exitCode = 1
+    const killProcessTree = vi.fn().mockReturnValue({ status: 255 })
+    await expect(stopChild(child, { platform: 'win32', killProcessTree })).resolves.toBe(true)
+    expect(killProcessTree).toHaveBeenCalledWith('taskkill.exe', ['/pid', '42731', '/t', '/f'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    })
+    expect(child.kill).not.toHaveBeenCalled()
+  })
+
   it('can terminate an orphaned Windows PTY process tree by pid', () => {
     const killProcessTree = vi.fn().mockReturnValue({ status: 0 })
     expect(stopProcessTree(42732, { platform: 'win32', killProcessTree })).toBe(true)
@@ -101,6 +114,22 @@ describe('OpenCode Server lifecycle', () => {
     vi.useFakeTimers()
     await expect(withTimeout(Promise.resolve({ id: 'pty-1' }), 12_000, '不应超时')).resolves.toEqual({ id: 'pty-1' })
     expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('aborts and settles a stalled request before reporting its timeout', async () => {
+    vi.useFakeTimers()
+    let aborted = false
+    const pending = withAbortTimeout((signal: AbortSignal) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => {
+        aborted = true
+        reject(new Error('aborted'))
+      }, { once: true })
+    }), 12_000, '终端启动超时。')
+    const assertion = expect(pending).rejects.toThrow('终端启动超时。')
+    await vi.advanceTimersByTimeAsync(12_000)
+    await assertion
+    expect(aborted).toBe(true)
     vi.useRealTimers()
   })
 })
