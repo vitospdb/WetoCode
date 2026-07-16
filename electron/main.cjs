@@ -888,10 +888,14 @@ async function websocketText(data) {
 async function closeTerminal(ptyId, remove = true) {
   const terminal = activeTerminals.get(ptyId)
   if (!terminal) return false
+  const serviceStillUsed = [...activeRuns.values()].some((run) => run.service === terminal.service)
+    || [...activeTerminals.entries()].some(([id, active]) => id !== ptyId && active.service === terminal.service)
+  if (process.platform === 'win32' && !serviceStillUsed) {
+    await stopAgentServer(terminal.service)
+    return true
+  }
   activeTerminals.delete(ptyId)
   try { terminal.socket.close() } catch {}
-  const serviceStillUsed = [...activeRuns.values()].some((run) => run.service === terminal.service)
-    || [...activeTerminals.values()].some((active) => active.service === terminal.service)
   if (remove && (process.platform !== 'win32' || serviceStillUsed)) {
     const removal = terminal.service.client.pty.remove({ ptyID: ptyId }).catch(() => {})
     terminal.service.pendingPtyRemovals.add(removal)
@@ -914,9 +918,22 @@ async function stopAgentServer(service) {
 async function stopAgentServerLifecycle(service) {
   const terminals = [...activeTerminals.entries()].filter(([, terminal]) => terminal.service === service)
   for (const [ptyId] of terminals) activeTerminals.delete(ptyId)
+  if (process.platform === 'win32') {
+    const stopped = await stopChild(service.child)
+    for (const [ptyId, terminal] of terminals) {
+      try { terminal.socket.close() } catch {}
+      sendToRenderer('terminal:event', { ptyId, type: 'exit', exitCode: -1 })
+    }
+    service.controller.abort()
+    if (!stopped) {
+      for (const [, terminal] of terminals) stopProcessTree(terminal.pty.pid)
+    }
+    if (agentServers.get(service.signature) === service) agentServers.delete(service.signature)
+    return
+  }
   const pendingRemovals = [
     ...service.pendingPtyRemovals,
-    ...(process.platform === 'win32' ? [] : terminals.map(([ptyId]) => service.client.pty.remove({ ptyID: ptyId }).catch(() => {}))),
+    ...terminals.map(([ptyId]) => service.client.pty.remove({ ptyID: ptyId }).catch(() => {})),
   ]
   if (pendingRemovals.length) {
     await Promise.race([
