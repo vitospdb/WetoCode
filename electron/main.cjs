@@ -922,10 +922,6 @@ async function stopAgentServer(service) {
     sendToRenderer('terminal:event', { ptyId, type: 'exit', exitCode: -1 })
   }
   service.controller.abort()
-  await Promise.race([
-    service.client.global.dispose().catch(() => {}),
-    new Promise((resolve) => setTimeout(resolve, 3000)),
-  ])
   const stopped = await stopChild(service.child)
   if (!stopped) {
     for (const [, terminal] of terminals) stopProcessTree(terminal.pty.pid)
