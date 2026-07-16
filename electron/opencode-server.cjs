@@ -29,6 +29,7 @@ async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnPro
     const cleanup = () => {
       clearTimeout(timer)
       child.stdout.removeListener('data', onData)
+      child.stderr.removeListener('data', onData)
       child.removeListener('error', onError)
       child.removeListener('exit', onExit)
     }
@@ -36,7 +37,7 @@ async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnPro
       if (settled) return
       settled = true
       cleanup()
-      child.kill('SIGTERM')
+      child.kill(process.platform === 'win32' ? 'SIGBREAK' : 'SIGTERM')
       reject(error)
     }
     const onData = (chunk) => {
@@ -52,7 +53,7 @@ async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnPro
     const timer = setTimeout(() => fail(new Error('本地执行服务启动超时。')), timeout)
 
     child.stdout.on('data', onData)
-    child.stderr.on('data', (chunk) => { output += chunk.toString() })
+    child.stderr.on('data', onData)
     child.once('error', onError)
     child.once('exit', onExit)
   })

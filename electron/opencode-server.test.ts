@@ -33,6 +33,14 @@ describe('OpenCode Server lifecycle', () => {
     expect(spawnProcess).toHaveBeenCalledWith('/bin/opencode', ['serve', '--hostname=127.0.0.1', '--port=42731'], expect.objectContaining({ cwd: '/project', windowsHide: true }))
   })
 
+  it('accepts the Windows server URL when OpenCode writes startup status to stderr', async () => {
+    const child = childProcess()
+    const spawnProcess = vi.fn().mockReturnValueOnce(child)
+    const started = startOpencodeServer({ binary: 'opencode.exe', cwd: 'C:\\project', env: {}, timeout: 1000, spawnProcess, getPort: () => Promise.resolve(42732) })
+    child.stderr.write('opencode server listening on http://127.0.0.1:42732\r\n')
+    await expect(started).resolves.toEqual({ child, url: 'http://127.0.0.1:42732' })
+  })
+
   it('terminates a running server with signals outside Windows', async () => {
     const child = childProcess()
     child.kill.mockImplementation(() => {
