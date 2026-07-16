@@ -34,6 +34,8 @@ let modelRegistryCache
 let sdkPromise
 let residentTray
 let isQuitting = false
+let quitCleanupComplete = false
+let quitCleanupPromise
 let automationTimer
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 const updatesEnabled = process.env.WETOCODE_ENABLE_UPDATES === '1'
@@ -883,36 +885,51 @@ async function websocketText(data) {
   return String(data ?? '')
 }
 
-function closeTerminal(ptyId, remove = true) {
+async function closeTerminal(ptyId, remove = true) {
   const terminal = activeTerminals.get(ptyId)
   if (!terminal) return false
   activeTerminals.delete(ptyId)
   try { terminal.socket.close() } catch {}
-  if (remove) terminal.service.client.pty.remove({ ptyID: ptyId }).catch(() => {})
+  if (remove) {
+    const removal = terminal.service.client.pty.remove({ ptyID: ptyId }).catch(() => {})
+    terminal.service.pendingPtyRemovals.add(removal)
+    await removal.finally(() => terminal.service.pendingPtyRemovals.delete(removal))
+  }
   return true
 }
 
-function stopAgentServer(service) {
+async function stopAgentServer(service) {
   if (!service) {
-    for (const runningService of [...agentServers.values()]) stopAgentServer(runningService)
+    await Promise.allSettled([...agentServers.values()].map((runningService) => stopAgentServer(runningService)))
     return
   }
-  for (const [ptyId, terminal] of activeTerminals) {
-    if (terminal.service !== service) continue
+  if (agentServers.get(service.signature) === service) agentServers.delete(service.signature)
+  const terminals = [...activeTerminals.entries()].filter(([, terminal]) => terminal.service === service)
+  for (const [ptyId] of terminals) activeTerminals.delete(ptyId)
+  const pendingRemovals = [
+    ...service.pendingPtyRemovals,
+    ...terminals.map(([ptyId]) => service.client.pty.remove({ ptyID: ptyId }).catch(() => {})),
+  ]
+  if (pendingRemovals.length) {
+    await Promise.race([
+      Promise.allSettled(pendingRemovals),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ])
+  }
+  for (const [ptyId, terminal] of terminals) {
     activeTerminals.delete(ptyId)
     try { terminal.socket.close() } catch {}
     sendToRenderer('terminal:event', { ptyId, type: 'exit', exitCode: -1 })
   }
   service.controller.abort()
   stopChild(service.child)
-  if (agentServers.get(service.signature) === service) agentServers.delete(service.signature)
 }
 
-function trimAgentServers(limit = 5) {
+async function trimAgentServers(limit = 5) {
   const idle = [...agentServers.values()]
     .filter((service) => ![...activeRuns.values()].some((run) => run.service === service) && ![...activeTerminals.values()].some((terminal) => terminal.service === service))
     .sort((left, right) => (left.lastUsed || 0) - (right.lastUsed || 0))
-  while (agentServers.size >= limit && idle.length) stopAgentServer(idle.shift())
+  while (agentServers.size >= limit && idle.length) await stopAgentServer(idle.shift())
 }
 
 async function startAgentProcess(options) {
@@ -936,8 +953,8 @@ async function ensureAgentServer(projectPath, provider, config) {
     existing.lastUsed = Date.now()
     return existing
   }
-  if (existing) stopAgentServer(existing)
-  trimAgentServers()
+  if (existing) await stopAgentServer(existing)
+  await trimAgentServers()
 
   const started = await startAgentProcess({
     binary: findOpenCode(),
@@ -951,7 +968,7 @@ async function ensureAgentServer(projectPath, provider, config) {
   const { createOpencodeClient } = await sdk()
   const client = createOpencodeClient({ baseUrl: started.url, directory: projectPath })
   const controller = new AbortController()
-  const service = { ...started, client, controller, signature, projectPath, lastUsed: Date.now() }
+  const service = { ...started, client, controller, signature, projectPath, lastUsed: Date.now(), pendingPtyRemovals: new Set() }
   agentServers.set(signature, service)
   started.child.once('exit', (code, signal) => {
     if (agentServers.get(signature) === service) agentServers.delete(signature)
@@ -1471,8 +1488,8 @@ async function stopPreview(projectPath) {
   return true
 }
 
-function stopAllPreviews() {
-  for (const preview of [...previewProcesses.values()]) void stopPreview(preview.projectPath)
+async function stopAllPreviews() {
+  await Promise.allSettled([...previewProcesses.values()].map((preview) => stopPreview(preview.projectPath)))
 }
 
 async function startPreview(projectPath, input = {}) {
@@ -1897,7 +1914,7 @@ function registerIpc() {
     settings.activeProviderId = id
     writeSettings(settings)
     clearModelRegistryCache()
-    if (!activeRuns.size) stopAgentServer()
+    if (!activeRuns.size) void stopAgentServer()
     return sanitizeSettings(settings)
   })
 
@@ -1921,7 +1938,7 @@ function registerIpc() {
     if (settings.activeProviderId === id) settings.activeProviderId = 'wetocode-free'
     writeSettings(settings)
     clearModelRegistryCache()
-    if (!activeRuns.size) stopAgentServer()
+    if (!activeRuns.size) void stopAgentServer()
     return sanitizeSettings(settings)
   })
 
@@ -1930,7 +1947,7 @@ function registerIpc() {
     if (!settings.providers.some((provider) => provider.id === id)) throw new Error('选择的模型配置不存在。')
     settings.activeProviderId = id
     writeSettings(settings)
-    if (!activeRuns.size) stopAgentServer()
+    if (!activeRuns.size) void stopAgentServer()
     return sanitizeSettings(settings)
   })
 
@@ -1946,7 +1963,7 @@ function registerIpc() {
     settings.activeProviderId = provider.id
     writeSettings(settings)
     clearModelRegistryCache()
-    if (!activeRuns.size) stopAgentServer()
+    if (!activeRuns.size) void stopAgentServer()
     return sanitizeSettings(settings)
   })
   ipcMain.handle('model:test', async (_event, input) => {
@@ -1982,7 +1999,7 @@ function registerIpc() {
     const settings = readSettings()
     settings.accessMode = normalizeAccessMode(accessMode)
     writeSettings(settings)
-    if (!activeRuns.size) stopAgentServer()
+    if (!activeRuns.size) void stopAgentServer()
     return sanitizeSettings(settings)
   })
   ipcMain.handle('settings:set-reasoning-effort', (_event, effort) => {
@@ -2376,7 +2393,7 @@ function registerIpc() {
         socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('终端连接失败。')) }, { once: true })
       })
     } catch (error) {
-      closeTerminal(pty.id)
+      await closeTerminal(pty.id)
       throw error
     }
     return { ...pty, mode }
@@ -2467,12 +2484,17 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   isQuitting = true
+  if (quitCleanupComplete) return
+  event.preventDefault()
+  if (quitCleanupPromise) return
   clearInterval(automationTimer)
   stopAllRuns()
-  stopAllPreviews()
-  stopAgentServer()
-  residentTray?.destroy()
-  residentTray = undefined
+  quitCleanupPromise = Promise.allSettled([stopAllPreviews(), stopAgentServer()]).finally(() => {
+    residentTray?.destroy()
+    residentTray = undefined
+    quitCleanupComplete = true
+    app.quit()
+  })
 })
