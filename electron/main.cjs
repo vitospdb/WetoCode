@@ -895,6 +895,9 @@ async function closeTerminal(ptyId, remove = true) {
     terminal.service.pendingPtyRemovals.add(removal)
     await removal.finally(() => terminal.service.pendingPtyRemovals.delete(removal))
   }
+  const serviceStillUsed = [...activeRuns.values()].some((run) => run.service === terminal.service)
+    || [...activeTerminals.values()].some((active) => active.service === terminal.service)
+  if (!serviceStillUsed) await stopAgentServer(terminal.service)
   return true
 }
 
