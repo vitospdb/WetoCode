@@ -20,6 +20,7 @@ async function startOpencodeServer({ binary, cwd, env, timeout = 15000, spawnPro
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
+    detached: process.platform === 'win32',
   })
 
   return new Promise((resolve, reject) => {
@@ -83,7 +84,7 @@ function waitForChildExit(child, timeout) {
 
 async function stopChild(child, { platform = process.platform, killProcessTree = spawnSync } = {}) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return true
-  child.kill('SIGTERM')
+  child.kill(platform === 'win32' ? 'SIGBREAK' : 'SIGTERM')
   if (await waitForChildExit(child, 3000)) return true
   if (stopProcessTree(child.pid, { platform, killProcessTree })) return waitForChildExit(child, 3000)
   child.kill('SIGKILL')

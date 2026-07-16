@@ -54,7 +54,7 @@ describe('OpenCode Server lifecycle', () => {
     child.emit('exit', null, 'SIGTERM')
     await stopping
     vi.useRealTimers()
-    expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+    expect(child.kill).toHaveBeenCalledWith('SIGBREAK')
     expect(killProcessTree).toHaveBeenCalledWith('taskkill.exe', ['/pid', '42731', '/t', '/f'], {
       windowsHide: true,
       stdio: 'ignore',
