@@ -441,6 +441,8 @@ export interface WetoCodeBridge {
   sendTerminalInput: (ptyId: string, data: string) => Promise<boolean>
   resizeTerminal: (ptyId: string, size: { rows: number; cols: number }) => Promise<boolean>
   closeTerminal: (ptyId: string) => Promise<boolean>
+  readClipboardText: () => Promise<string>
+  writeClipboardText: (value: string) => Promise<boolean>
   saveProvider: (provider: Partial<ProviderSettings> & { apiKey?: string }) => Promise<AppSettings>
   testProvider: (provider: Partial<ProviderSettings> & { apiKey?: string }) => Promise<{ ok: true; status: number; latencyMs: number; message: string }>
   deleteProvider: (id: string) => Promise<AppSettings>

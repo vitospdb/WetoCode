@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, Tray } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, Tray } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { execFile, spawn } = require('node:child_process')
 const { createHash, randomUUID } = require('node:crypto')
@@ -2230,6 +2230,11 @@ function registerIpc() {
   })
 
   ipcMain.handle('terminal:close', (_event, ptyId) => closeTerminal(ptyId))
+  ipcMain.handle('clipboard:read-text', () => clipboard.readText().slice(0, 1_000_000))
+  ipcMain.handle('clipboard:write-text', (_event, value) => {
+    clipboard.writeText(String(value || '').slice(0, 1_000_000))
+    return true
+  })
 
   ipcMain.handle('shell:open-external', (_event, url) => {
     if (typeof url === 'string' && url.startsWith('https://')) return shell.openExternal(url)

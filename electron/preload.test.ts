@@ -179,12 +179,16 @@ describe('Electron preload subscriptions', () => {
     await (exposed.sendTerminalInput as (id: string, data: string) => Promise<unknown>)('pty-1', 'pwd\r')
     await (exposed.resizeTerminal as (id: string, size: unknown) => Promise<unknown>)('pty-1', { rows: 30, cols: 100 })
     await (exposed.closeTerminal as (id: string) => Promise<unknown>)('pty-1')
+    await (exposed.readClipboardText as () => Promise<unknown>)()
+    await (exposed.writeClipboardText as (value: string) => Promise<unknown>)('中文剪贴板')
     expect(ipcRenderer.invoke.mock.calls).toEqual(expect.arrayContaining([
       ['terminal:create', '/project', { rows: 24, cols: 80 }, 'cli'],
       ['terminal:attach', 'pty-1'],
       ['terminal:input', 'pty-1', 'pwd\r'],
       ['terminal:resize', 'pty-1', { rows: 30, cols: 100 }],
       ['terminal:close', 'pty-1'],
+      ['clipboard:read-text'],
+      ['clipboard:write-text', '中文剪贴板'],
     ]))
     expect(exposed).not.toHaveProperty('getServerUrl')
   })

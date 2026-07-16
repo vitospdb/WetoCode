@@ -270,9 +270,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .terminal-toolbar .icon-btn { width: 27px; height: 27px; flex-basis: 27px; color: #9da7a2; }
 .terminal-toolbar .icon-btn:hover { color: #fff; background: #394145; }
 .terminal-mode-switch { display: flex; gap: 2px; padding: 2px; border-radius: 4px; background: #202528; }.terminal-mode-switch button { height: 25px; padding: 0 8px; border: 0; border-radius: 3px; color: #87928d; background: transparent; font-size: 8px; cursor: pointer; }.terminal-mode-switch button:hover { color: #dce4df; }.terminal-mode-switch button.active { color: #fff; background: #3b4641; }.terminal-mode-switch button:disabled { cursor: default; opacity: .6; }
-.terminal-host { min-width: 0; min-height: 0; padding: 7px 9px 4px; overflow: hidden; }
-.terminal-host .xterm { height: 100%; }
-.terminal-host .xterm-viewport { scrollbar-color: #56605b #202528; scrollbar-width: thin; }
+.terminal-host { position: relative; min-width: 0; min-height: 0; padding: 7px 9px 4px; overflow: hidden; }
+.terminal-canvas { width: 100%; height: 100%; }
+.terminal-canvas .xterm { height: 100%; }
+.terminal-canvas .xterm-viewport { scrollbar-color: #56605b #202528; scrollbar-width: thin; }
+.terminal-canvas .composition-view { color: #fff; background: #355e49; z-index: 20; }
+.terminal-context-menu { position: absolute; z-index: 30; width: 112px; padding: 4px; border: 1px solid #4b5550; border-radius: 5px; background: #292f32; box-shadow: 0 8px 24px rgba(0,0,0,.28); }
+.terminal-context-menu button { display: block; width: 100%; height: 29px; padding: 0 8px; border: 0; border-radius: 3px; color: #e0e6e3; background: transparent; font-size: 9px; text-align: left; cursor: pointer; }
+.terminal-context-menu button:hover { background: #3b4641; }.terminal-context-menu button:disabled { color: #68736e; cursor: default; background: transparent; }
 
 .composer-wrap { padding: 8px max(20px, calc((100% - 820px) / 2)) 13px; background: linear-gradient(to bottom, transparent, var(--surface) 9px); }
 .goal-strip { display: grid; grid-template-columns: 28px minmax(150px, 1fr) minmax(120px, .75fr) 26px 26px; align-items: center; gap: 7px; min-height: 48px; margin-bottom: 7px; padding: 6px 7px 6px 8px; border: 1px solid #9bc3af; border-radius: 6px; background: var(--green-soft); }

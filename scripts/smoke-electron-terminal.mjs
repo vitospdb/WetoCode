@@ -97,6 +97,24 @@ async function until(client, expression, label, timeout = 30_000) {
   throw new Error(`Timed out waiting for ${label}. UI: ${JSON.stringify(ui)}. ${logs}`)
 }
 
+async function terminalText(client) {
+  const tree = await client.send('Accessibility.getFullAXTree')
+  return [
+    tree.nodes.map((node) => node.name?.value || node.value?.value || '').join('\n'),
+    await client.evaluate(`document.querySelector('.xterm-accessibility-tree')?.innerText || ''`),
+  ].join('\n')
+}
+
+async function waitForTerminalText(client, marker, label, timeout = 90_000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    const value = await terminalText(client)
+    if (value.includes(marker)) return value
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  throw new Error(`Timed out waiting for ${label}. ${logs}`)
+}
+
 let client
 try {
   client = cdp(await debuggerUrl())
@@ -112,20 +130,43 @@ try {
   })`)
   if (!cliState.status?.includes('运行中')) throw new Error(`WetoCode CLI exited during startup: ${JSON.stringify(cliState)}`)
   if (/open\s?code/i.test(cliState.text)) throw new Error(`Upstream branding is visible in WetoCode CLI: ${cliState.text}`)
-  await client.evaluate(`window.wetocode.sendTerminalInput(${JSON.stringify(cliPtyId)}, '只回复 WETOCODE_REAL_TUI_OK\\r')`)
-  const responseDeadline = Date.now() + 90_000
-  let cliText = ''
-  while (Date.now() < responseDeadline) {
-    const tree = await client.send('Accessibility.getFullAXTree')
-    cliText = [
-      tree.nodes.map((node) => node.name?.value || node.value?.value || '').join('\n'),
-      await client.evaluate(`document.querySelector('.xterm-accessibility-tree')?.innerText || ''`),
-    ].join('\n')
-    if (cliText.includes('WETOCODE_REAL_TUI_OK')) break
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  if (!cliText.includes('WETOCODE_REAL_TUI_OK')) throw new Error(`Real attached TUI did not return the model response. ${logs}`)
+  await until(client, `['修复代码库中的 TODO', '这个项目使用了哪些技术？', '修复失败的测试'].some((text) => document.querySelector('.xterm-accessibility-tree')?.innerText.includes(text))`, 'localized home prompt', 15_000)
+
+  const imePrompt = '只回复 WETOCODE_IME_OK'
+  await client.evaluate(`(async () => {
+    const textarea = document.querySelector('.xterm-helper-textarea')
+    if (!textarea) throw new Error('Missing xterm helper textarea')
+    textarea.focus()
+    textarea.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }))
+    textarea.value = ${JSON.stringify(imePrompt)}
+    textarea.dispatchEvent(new CompositionEvent('compositionupdate', { data: ${JSON.stringify(imePrompt)}, bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    textarea.dispatchEvent(new CompositionEvent('compositionend', { data: ${JSON.stringify(imePrompt)}, bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  })()`)
+  await client.evaluate(`window.wetocode.sendTerminalInput(${JSON.stringify(cliPtyId)}, '\\r')`)
+  let cliText = await waitForTerminalText(client, 'WETOCODE_IME_OK', 'Chinese IME model response')
   if (/open\s?code/i.test(cliText)) throw new Error(`Upstream branding is visible in WetoCode CLI: ${cliText}`)
+
+  await new Promise((resolve) => setTimeout(resolve, 1_000))
+  await client.evaluate(`window.wetocode.writeClipboardText('只回复 WETOCODE_PASTE_OK')`)
+  await client.evaluate(`(() => {
+    const host = document.querySelector('.terminal-host')
+    const bounds = host.getBoundingClientRect()
+    host.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: bounds.left + 20,
+      clientY: bounds.top + 20,
+    }))
+  })()`)
+  await until(client, `[...document.querySelectorAll('.terminal-context-menu button')].map((button) => button.textContent).join(',') === '复制,粘贴'`, 'terminal context menu', 5_000)
+  await client.evaluate(`[...document.querySelectorAll('.terminal-context-menu button')].find((button) => button.textContent === '粘贴').click()`)
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await client.evaluate(`window.wetocode.sendTerminalInput(${JSON.stringify(cliPtyId)}, '\\r')`)
+  cliText = await waitForTerminalText(client, 'WETOCODE_PASTE_OK', 'clipboard paste model response')
+  if (/open\s?code/i.test(cliText)) throw new Error(`Upstream branding is visible in WetoCode CLI: ${cliText}`)
+
   await client.evaluate(`[...document.querySelectorAll('.terminal-mode-switch button')].find((button) => button.textContent === 'Shell').click()`)
   await until(client, `document.querySelector('.terminal-mode-switch button.active')?.textContent === 'Shell' && document.querySelector('.terminal-toolbar')?.innerText.includes('运行中') && document.querySelector('.terminal-panel')?.dataset.ptyId && document.querySelector('.terminal-panel')?.dataset.ptyId !== ${JSON.stringify(cliPtyId)}`, 'shell mode', 30_000)
   const shellCommand = process.platform === 'win32'
@@ -162,7 +203,7 @@ try {
   }
   await client.evaluate(`[...document.querySelectorAll('.terminal-toolbar button')].find((button) => button.title === '关闭终端').click()`)
   await until(client, `!document.querySelector('.terminal-panel')`, 'terminal close', 5_000)
-  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', realAttachedTui: true, modelResponse: 'WETOCODE_REAL_TUI_OK', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
+  console.log(JSON.stringify({ ok: true, terminalPanel: true, defaultMode: 'cli', localizedTui: true, chineseIme: 'WETOCODE_IME_OK', contextMenu: ['复制', '粘贴'], clipboardPaste: 'WETOCODE_PASTE_OK', upstreamBrandVisible: false, shellOutput: 'WETOCODE_TERMINAL_UI_OK', rulesMigration: true }, null, 2))
 } finally {
   client?.close()
   child.kill('SIGTERM')

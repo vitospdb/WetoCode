@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('wetocode', {
   sendTerminalInput: (ptyId, data) => ipcRenderer.invoke('terminal:input', ptyId, data),
   resizeTerminal: (ptyId, size) => ipcRenderer.invoke('terminal:resize', ptyId, size),
   closeTerminal: (ptyId) => ipcRenderer.invoke('terminal:close', ptyId),
+  readClipboardText: () => ipcRenderer.invoke('clipboard:read-text'),
+  writeClipboardText: (value) => ipcRenderer.invoke('clipboard:write-text', value),
   saveProvider: (provider) => ipcRenderer.invoke('provider:save', provider),
   testProvider: (provider) => ipcRenderer.invoke('provider:test', provider),
   deleteProvider: (id) => ipcRenderer.invoke('provider:delete', id),

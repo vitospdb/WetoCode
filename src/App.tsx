@@ -1192,17 +1192,36 @@ function TerminalPanel({ project, theme, onClose, onError }: {
   const [terminalReady, setTerminalReady] = useState(false)
   const [generation, setGeneration] = useState(0)
   const [mode, setMode] = useState<TerminalInfo['mode']>('cli')
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canCopy: boolean }>()
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(undefined)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [contextMenu])
 
   useEffect(() => {
     let disposed = false
     let observer: ResizeObserver | undefined
     let input: { dispose: () => void } | undefined
+    let compositionStart = 0
+    let inputRevision = 0
+    let compositionStartHandler: (() => void) | undefined
+    let compositionEnd: ((event: CompositionEvent) => void) | undefined
     void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]).then(([xterm, addon]) => {
       if (disposed || !hostRef.current) return
       const terminal = new xterm.Terminal({
         cursorBlink: true,
         cursorStyle: 'bar',
-        fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', monospace",
+        fontFamily: "'SFMono-Regular', Consolas, 'Microsoft YaHei UI', 'Noto Sans SC Variable', 'Liberation Mono', monospace",
         fontSize: 12,
         lineHeight: 1.25,
         screenReaderMode: true,
@@ -1214,6 +1233,22 @@ function TerminalPanel({ project, theme, onClose, onError }: {
       terminalRef.current = terminal
       fitRef.current = fit
       terminal.open(hostRef.current)
+      terminal.attachCustomKeyEventHandler((event) => {
+        if (event.type !== 'keydown' || !event.ctrlKey || !event.shiftKey) return true
+        const key = event.key.toLowerCase()
+        if (key === 'c') {
+          if (terminal.hasSelection()) void bridge.writeClipboardText(terminal.getSelection())
+          return false
+        }
+        if (key === 'v') {
+          void bridge.readClipboardText().then((text) => {
+            if (text) terminal.paste(text)
+            terminal.focus()
+          })
+          return false
+        }
+        return true
+      })
       observer = new ResizeObserver(() => {
         fit.fit()
         const current = infoRef.current
@@ -1221,9 +1256,25 @@ function TerminalPanel({ project, theme, onClose, onError }: {
       })
       observer.observe(hostRef.current)
       input = terminal.onData((data) => {
+        inputRevision += 1
         const current = infoRef.current
         if (current?.status === 'running') void bridge.sendTerminalInput(current.id, data)
       })
+      compositionStartHandler = () => {
+        compositionStart = inputRevision
+      }
+      terminal.textarea?.addEventListener('compositionstart', compositionStartHandler)
+      compositionEnd = (event) => {
+        const text = event.data
+        const revision = compositionStart
+        setTimeout(() => {
+          const current = infoRef.current
+          if (!text || inputRevision !== revision || current?.status !== 'running') return
+          inputRevision += 1
+          void bridge.sendTerminalInput(current.id, text)
+        }, 30)
+      }
+      terminal.textarea?.addEventListener('compositionend', compositionEnd)
       fit.fit()
       setTerminalReady(true)
     }).catch((error: Error) => onError(`终端组件加载失败：${error.message}`))
@@ -1234,6 +1285,8 @@ function TerminalPanel({ project, theme, onClose, onError }: {
       if (current) void bridge.closeTerminal(current.id)
       observer?.disconnect()
       input?.dispose()
+      if (compositionStartHandler) terminalRef.current?.textarea?.removeEventListener('compositionstart', compositionStartHandler)
+      if (compositionEnd) terminalRef.current?.textarea?.removeEventListener('compositionend', compositionEnd)
       terminalRef.current?.dispose()
       terminalRef.current = undefined
       fitRef.current = undefined
@@ -1298,7 +1351,34 @@ function TerminalPanel({ project, theme, onClose, onError }: {
         <div><TerminalSquare size={14} /><b>终端</b><div className="terminal-mode-switch"><button className={mode === 'cli' ? 'active' : ''} disabled={starting} onClick={() => setMode('cli')}>WetoCode CLI</button><button className={mode === 'shell' ? 'active' : ''} disabled={starting} onClick={() => setMode('shell')}>Shell</button></div><span>{starting ? '正在启动' : info ? `${info.status === 'running' ? '运行中' : `已退出 ${info.exitCode ?? ''}`}` : '未连接'}</span></div>
         <div><button className="icon-btn" title="重新启动终端" disabled={starting} onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={14} /></button><button className="icon-btn" title="关闭终端" onClick={onClose}><X size={15} /></button></div>
       </div>
-      <div className="terminal-host" ref={hostRef} />
+      <div className="terminal-host" onContextMenu={(event) => {
+        event.preventDefault()
+        terminalRef.current?.focus()
+        const bounds = event.currentTarget.getBoundingClientRect()
+        setContextMenu({
+          x: Math.min(event.clientX - bounds.left, Math.max(0, bounds.width - 118)),
+          y: Math.min(event.clientY - bounds.top, Math.max(0, bounds.height - 72)),
+          canCopy: Boolean(terminalRef.current?.hasSelection()),
+        })
+      }}>
+        <div className="terminal-canvas" ref={hostRef} />
+        {contextMenu && <div className="terminal-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()} onMouseLeave={() => setContextMenu(undefined)}>
+          <button disabled={!contextMenu.canCopy} onClick={() => {
+            const terminal = terminalRef.current
+            if (terminal?.hasSelection()) void bridge.writeClipboardText(terminal.getSelection())
+            terminal?.clearSelection()
+            terminal?.focus()
+            setContextMenu(undefined)
+          }}>复制</button>
+          <button onClick={() => {
+            void bridge.readClipboardText().then((text) => {
+              if (text) terminalRef.current?.paste(text)
+              terminalRef.current?.focus()
+            })
+            setContextMenu(undefined)
+          }}>粘贴</button>
+        </div>}
+      </div>
     </section>
   )
 }

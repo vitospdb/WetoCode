@@ -78,6 +78,8 @@ export const mockBridge: WetoCodeBridge = {
   sendTerminalInput: async () => true,
   resizeTerminal: async () => true,
   closeTerminal: async () => true,
+  readClipboardText: async () => '',
+  writeClipboardText: async () => true,
   saveProvider: async (provider) => {
     bootstrap.settings.providers = [
       { ...providers[0], ...provider, id: provider.id || crypto.randomUUID(), hasApiKey: Boolean(provider.apiKey) },
