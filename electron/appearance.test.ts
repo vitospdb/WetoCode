@@ -42,6 +42,12 @@ describe('appearance settings', () => {
     }
   })
 
+  it('accepts the beginner-friendly theme gallery presets', () => {
+    expect(normalizeAppearance({ theme: 'midnight-code' }).theme).toBe('midnight-code')
+    expect(normalizeAppearance({ theme: 'rose-garden' }).theme).toBe('rose-garden')
+    expect(normalizeAppearance({ theme: 'strawberry-dream' }).theme).toBe('strawberry-dream')
+  })
+
   it('normalizes custom appearance values and rejects unsafe colors or image URLs', () => {
     expect(normalizeAppearance({ custom: { accent: '#ef7188', background: 'red', transparency: 9, backgroundImage: 'https://example.com/x.png' }, terminal: { background: '#202020' } }))
       .toMatchObject({ custom: { accent: '#ef7188', background: '', transparency: 70, backgroundImage: '' }, terminal: { background: '#202020' } })

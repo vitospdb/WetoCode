@@ -1,4 +1,4 @@
-const THEMES = new Set(['system', 'light', 'dark', 'wetocode-dark', 'cloud-light', 'strawberry-cream', 'silver-minimal', 'forest-care'])
+const THEMES = new Set(['system', 'light', 'dark', 'wetocode-dark', 'cloud-light', 'strawberry-cream', 'strawberry-dream', 'silver-minimal', 'forest-care', 'midnight-code', 'rose-garden'])
 const DENSITIES = new Set(['comfortable', 'compact'])
 const MIN_ZOOM = 0.8
 const MAX_ZOOM = 1.4

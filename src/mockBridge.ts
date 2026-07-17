@@ -94,13 +94,17 @@ export const mockBridge: WetoCodeBridge = {
     return bootstrap.settings
   },
   testProvider: async () => ({ ok: true, status: 200, latencyMs: 120, message: '连接成功，密钥、API 地址和模型 ID 均可用。' }),
-  listModelRegistry: async () => ({
-    models: [{
-      id: 'wetocode-free:mimo-v2.5-free', configurationId: 'wetocode-free', modelId: 'mimo-v2.5-free', providerId: 'opencode', providerName: '公共免费模型',
-      displayName: 'Mimo 2.5 Free', description: '当前已配置模型', inputPrice: 0, outputPrice: 0, isFree: true, freeReason: '演示数据', priceState: 'free', contextWindow: 262144,
-      supportsTools: true, supportsVision: false, supportsReasoning: true, supportsStreaming: true, authRequired: false, availability: 'connected', latency: 120, lastCheckedAt: Date.now(), source: 'configured', tags: ['已配置'],
-    }], refreshedAt: Date.now(), cached: false, errors: [], favorites: [],
-  }),
+  listModelRegistry: async () => {
+    const publicModels: Array<[string, string, number]> = [
+      ['big-pickle', 'Big Pickle', 200000], ['deepseek-v4-flash-free', 'DeepSeek V4 Flash', 200000], ['hy3-free', 'HY 3', 190000],
+      ['mimo-v2.5-free', 'MiMo V2.5', 200000], ['nemotron-3-ultra-free', 'Nemotron 3 Ultra', 1000000], ['north-mini-code-free', 'North Mini Code', 256000],
+    ]
+    return { models: publicModels.map(([modelId, displayName, contextWindow]) => ({
+      id: `wetocode-free:${modelId}`, configurationId: 'wetocode-free', modelId, providerId: 'opencode', providerName: '公共免费模型',
+      displayName, description: 'OpenCode 公共免费目录', inputPrice: 0, outputPrice: 0, isFree: true, freeReason: '演示数据', priceState: 'free' as const, contextWindow,
+      supportsTools: true, supportsVision: false, supportsReasoning: false, supportsStreaming: true, authRequired: false, availability: 'connected' as const, latency: 120, lastCheckedAt: Date.now(), source: 'opencode' as const, tags: ['免费', '公共目录'],
+    })), refreshedAt: Date.now(), cached: false, errors: [], favorites: [] }
+  },
   useRegistryModel: async (input) => {
     bootstrap.settings.providers = bootstrap.settings.providers.map((provider) => provider.id === input.configurationId ? { ...provider, model: input.modelId, contextWindow: input.contextWindow || provider.contextWindow } : provider)
     bootstrap.settings.activeProviderId = input.configurationId

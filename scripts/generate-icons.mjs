@@ -37,9 +37,7 @@ function pointInPolygon(x, y, points) {
   return inside
 }
 
-function roundedSquareContains(x, y) {
-  const inset = 0.055
-  const radius = 0.22
+function roundedSquareContains(x, y, inset = 0.055, radius = 0.22) {
   const left = inset
   const right = 1 - inset
   const top = inset
@@ -50,10 +48,17 @@ function roundedSquareContains(x, y) {
   return Math.hypot(x - cornerX, y - cornerY) <= radius
 }
 
-const mark = [
-  [0.205, 0.29], [0.318, 0.29], [0.407, 0.645], [0.494, 0.405],
-  [0.574, 0.645], [0.682, 0.29], [0.795, 0.29], [0.642, 0.735],
-  [0.532, 0.735], [0.493, 0.605], [0.449, 0.735], [0.356, 0.735],
+function circleContains(x, y, centerX, centerY, radius) {
+  return Math.hypot(x - centerX, y - centerY) <= radius
+}
+
+function rectangleContains(x, y, left, top, right, bottom) {
+  return x >= left && x <= right && y >= top && y <= bottom
+}
+
+const promptMark = [
+  [0.255, 0.47], [0.405, 0.60], [0.255, 0.73],
+  [0.285, 0.47], [0.435, 0.60], [0.285, 0.73],
 ]
 
 function drawIcon(size) {
@@ -65,17 +70,34 @@ function drawIcon(size) {
       const normalizedX = (x + 0.5) / sourceSize
       const normalizedY = (y + 0.5) / sourceSize
       const offset = (y * sourceSize + x) * 4
-      if (roundedSquareContains(normalizedX, normalizedY)) {
-        const highlight = Math.max(0, 1 - normalizedY) * 8
-        source[offset] = 23 + highlight
-        source[offset + 1] = 107 + highlight
-        source[offset + 2] = 77 + highlight
+      if (roundedSquareContains(normalizedX, normalizedY, 0.045, 0.18)) {
+        const highlight = Math.max(0, 1 - normalizedY) * 10
+        source[offset] = 15 + highlight
+        source[offset + 1] = 25 + highlight
+        source[offset + 2] = 37 + highlight
         source[offset + 3] = 255
       }
-      if (pointInPolygon(normalizedX, normalizedY, mark)) {
-        source[offset] = 247
-        source[offset + 1] = 250
-        source[offset + 2] = 248
+      if (roundedSquareContains(normalizedX, normalizedY, 0.135, 0.075)
+        && normalizedY < 0.275
+        && normalizedX > 0.18 && normalizedX < 0.82) {
+        source[offset] = 58
+        source[offset + 1] = 76
+        source[offset + 2] = 91
+        source[offset + 3] = 255
+      }
+      if (circleContains(normalizedX, normalizedY, 0.23, 0.205, 0.018)
+        || circleContains(normalizedX, normalizedY, 0.30, 0.205, 0.018)
+        || circleContains(normalizedX, normalizedY, 0.37, 0.205, 0.018)) {
+        source[offset] = 88
+        source[offset + 1] = 201
+        source[offset + 2] = 165
+        source[offset + 3] = 255
+      }
+      if (pointInPolygon(normalizedX, normalizedY, promptMark)
+        || rectangleContains(normalizedX, normalizedY, 0.50, 0.585, 0.72, 0.625)) {
+        source[offset] = 103
+        source[offset + 1] = 221
+        source[offset + 2] = 178
         source[offset + 3] = 255
       }
     }

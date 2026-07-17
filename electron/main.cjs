@@ -17,7 +17,7 @@ const { emptyUsage, normalizeUsage, recordUsage, usageSummary } = require('./usa
 const { nextRunAt, normalizeAutomations, normalizeSchedule } = require('./automation-state.cjs')
 const { loopbackPreviewUrl, packagePreviewCommands, parsePreviewCommand, urlFromOutput } = require('./preview-tools.cjs')
 const { assertProviderUrl, normalizeBaseUrl, normalizeProviderProtocol, providerPackage, testProviderConnection } = require('./provider-tools.cjs')
-const { CACHE_TTL_MS, configuredModel, discoverOpenAICompatibleModels, modelFromOpenAI, modelFromOpenCode, uniqueModels } = require('./model-registry.cjs')
+const { CACHE_TTL_MS, configuredModel, discoverOpenAICompatibleModels, modelFromOpenAI, modelFromOpenCode, publicFreeModels, uniqueModels } = require('./model-registry.cjs')
 const { normalizeTerminalMode, terminalPtyInput } = require('./terminal-tools.cjs')
 const { createTerminalBrandFilter } = require('./terminal-brand.cjs')
 const { environmentReport } = require('./environment-tools.cjs')
@@ -39,6 +39,7 @@ let quitCleanupPromise
 let automationTimer
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 const updatesEnabled = process.env.WETOCODE_ENABLE_UPDATES === '1'
+const PUBLIC_FREE_PROVIDER_ID = 'wetocode-free'
 
 if (!hasSingleInstanceLock) app.quit()
 
@@ -82,6 +83,17 @@ function providerForRegistry(provider) {
   return { ...provider, hasApiKey: Boolean(provider.apiKeyEncrypted) }
 }
 
+function modelDirectoryEntries(result) {
+  const data = resultData(result)
+  return Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []
+}
+
+function isActivePublicFreeModel(model) {
+  if (model?.enabled === false || model?.status === 'deprecated') return false
+  const costs = Array.isArray(model?.cost) ? model.cost : []
+  return costs.some((cost) => !cost?.tier && Number(cost.input) === 0 && Number(cost.output) === 0)
+}
+
 function registryCacheKey(settings, projectPath) {
   return JSON.stringify({
     projectPath: projectPath || '',
@@ -106,6 +118,7 @@ async function discoverRegistryModels(projectPath, refresh = false) {
     const provider = providerForRegistry(storedProvider)
     const fallback = configuredModel(provider)
     models.push(fallback)
+    models.push(...publicFreeModels(provider))
     try {
       if (provider.kind === 'custom' && provider.protocol === 'openai-compatible' && provider.baseUrl) {
         if (fallback.authRequired) {
@@ -119,10 +132,11 @@ async function discoverRegistryModels(projectPath, refresh = false) {
       }
       if (!authorizedProject) continue
       const service = await ensureAgentServer(authorizedProject, storedProvider, customProviderConfig(storedProvider, settings))
-      const result = resultData(await service.client.model.list())
-      const discovered = (Array.isArray(result) ? result : result?.data || []).filter((model) => model.providerID === provider.providerId)
+      const result = await service.client.v2.model.list()
+      const discovered = modelDirectoryEntries(result).filter((model) => model.providerID === provider.providerId)
       if (!discovered.length) throw new Error('OpenCode 没有返回此服务的模型。')
-      models.push(...discovered.map((model) => modelFromOpenCode(provider, model)))
+      const visible = provider.id === PUBLIC_FREE_PROVIDER_ID ? discovered.filter(isActivePublicFreeModel) : discovered
+      models.push(...visible.map((model) => modelFromOpenCode(provider, model)))
     } catch (error) {
       errors.push({
         configurationId: provider.id,
@@ -132,8 +146,20 @@ async function discoverRegistryModels(projectPath, refresh = false) {
     }
   }
 
+  const unique = uniqueModels(models)
+  const configuredOrder = new Map(settings.providers.map((provider, index) => [`${provider.id}:${provider.model}`, index]))
+  unique.sort((left, right) => {
+    const leftConfigured = configuredOrder.get(left.id)
+    const rightConfigured = configuredOrder.get(right.id)
+    if (leftConfigured !== undefined || rightConfigured !== undefined) {
+      if (leftConfigured === undefined) return 1
+      if (rightConfigured === undefined) return -1
+      if (leftConfigured !== rightConfigured) return leftConfigured - rightConfigured
+    }
+    return 0
+  })
   const result = {
-    models: uniqueModels(models),
+    models: unique,
     refreshedAt: Date.now(),
     cached: false,
     errors,
@@ -385,7 +411,7 @@ function sanitizeSettings(settings) {
 
 function nativeThemeSource(theme) {
   if (theme === 'system') return 'system'
-  if (['dark', 'wetocode-dark', 'forest-care'].includes(theme)) return 'dark'
+  if (['dark', 'wetocode-dark', 'forest-care', 'midnight-code'].includes(theme)) return 'dark'
   return 'light'
 }
 
@@ -571,7 +597,7 @@ function showMainWindow() {
 }
 
 function trayIcon() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#20855c"/><path d="M6 9l4 14 6-9 6 9 4-14" fill="none" stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#101923"/><rect x="5" y="7" width="22" height="17" rx="2.5" fill="#3a4c5b"/><circle cx="9" cy="10.5" r="1.2" fill="#58c9a5"/><circle cx="13" cy="10.5" r="1.2" fill="#58c9a5"/><circle cx="17" cy="10.5" r="1.2" fill="#58c9a5"/><path d="M9 14l4 3.5L9 21" fill="none" stroke="#67ddb2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 21h7" stroke="#67ddb2" stroke-width="2" stroke-linecap="round"/></svg>`
   return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
 }
 
@@ -1643,6 +1669,18 @@ function createWindow() {
         if (process.env.WETOCODE_SCREENSHOT_VIEW === 'settings') {
           await window.webContents.executeJavaScript(`document.querySelector('button[title="设置"]')?.click()`)
           await new Promise((resolve) => setTimeout(resolve, 350))
+        } else if (process.env.WETOCODE_SCREENSHOT_VIEW === 'strawberry-dream') {
+          await window.webContents.executeJavaScript(`document.querySelector('button[title="设置"]')?.click()`)
+          await new Promise((resolve) => setTimeout(resolve, 250))
+          await window.webContents.executeJavaScript(`[...document.querySelectorAll('.theme-card')].find((button) => button.textContent.includes('草莓梦境'))?.click()`)
+          await window.webContents.executeJavaScript(`document.querySelector('.panel-head button[title="关闭"]')?.click()`)
+          await window.webContents.executeJavaScript(`
+            document.querySelector('.workspace-head > div > span')?.replaceChildren('草莓主题预览工作区')
+            document.querySelector('.project-item span')?.replaceChildren('草莓主题预览')
+            document.querySelector('.project-switcher > button')?.replaceChildren('草莓主题预览')
+            document.querySelector('.welcome p')?.replaceChildren('一键换上草莓、蝴蝶结与粉色玻璃感，让 Coding Agent 也有自己的风格。')
+          `)
+          await new Promise((resolve) => setTimeout(resolve, 500))
         } else if (process.env.WETOCODE_SCREENSHOT_VIEW === 'tasks') {
           await window.webContents.executeJavaScript(`document.querySelector('button[title="后台任务"]')?.click()`)
           await new Promise((resolve) => setTimeout(resolve, 350))
@@ -2018,8 +2056,8 @@ function registerIpc() {
     if (!projectPath) throw new Error('请先打开一个项目，再测试此模型。')
     const startedAt = Date.now()
     const service = await ensureAgentServer(projectPath, { ...provider, model: modelId }, customProviderConfig({ ...provider, model: modelId }, settings))
-    const result = resultData(await service.client.model.list())
-    const models = Array.isArray(result) ? result : result?.data || []
+    const result = await service.client.v2.model.list()
+    const models = modelDirectoryEntries(result)
     if (!models.some((model) => model.providerID === provider.providerId && model.id === modelId)) throw new Error('服务当前没有返回这个模型。')
     return { ok: true, status: 200, latencyMs: Date.now() - startedAt, message: '连接成功，模型目录中可以使用此模型。' }
   })

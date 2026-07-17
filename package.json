@@ -1,6 +1,6 @@
 {
   "name": "wetocode",
-  "version": "0.2.8",
+  "version": "0.2.14",
   "private": true,
   "description": "更符合中国开发者使用习惯的中文桌面 Coding Agent",
   "main": "electron/main.cjs",
@@ -21,6 +21,7 @@
   "scripts": {
     "cli": "node ./bin/wetocode.mjs",
     "assets:icons": "node scripts/generate-icons.mjs",
+    "assets:themes": "node scripts/generate-theme-assets.mjs",
     "pack:cli": "node scripts/pack-cli.mjs",
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "build": "tsc -b && vite build",
@@ -42,8 +43,8 @@
     "lint": "eslint .",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
-    "dist:win": "npm run build && node scripts/prepare-opencode.mjs win32 x64 && node scripts/build-win.mjs",
-    "dist:win:dir": "npm run build && node scripts/prepare-opencode.mjs win32 x64 && electron-builder --win --x64 --dir"
+    "dist:win": "npm run build && node scripts/prepare-opencode.mjs win32 x64 && node scripts/build-win.mjs && node scripts/verify-theme-package.mjs",
+    "dist:win:dir": "npm run build && node scripts/prepare-opencode.mjs win32 x64 && electron-builder --win --x64 --dir && node scripts/verify-theme-package.mjs"
   },
   "dependencies": {
     "@opencode-ai/sdk": "1.17.18",

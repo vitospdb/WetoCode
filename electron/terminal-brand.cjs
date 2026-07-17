@@ -121,6 +121,39 @@ function brandText(value) {
   return value.replace(UPSTREAM_NAME, 'WetoCode')
 }
 
+const ANSI_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/g
+const TERMINAL_LOGO = 'W'
+const BLOCK_LOGO = /█▀▀█|█  █|▀▀▀▀/
+
+function replaceTerminalLogo(value, state) {
+  if (state.logoReplaced || !value) return value
+  const output = []
+  let offset = 0
+  const lines = /[^\r\n]*(?:\r\n|\r|\n|$)/g
+  for (const match of value.matchAll(lines)) {
+    const line = match[0]
+    if (!line) break
+    const ending = line.match(/(?:\r\n|\r|\n)$/)?.[0] || ''
+    const content = ending ? line.slice(0, -ending.length) : line
+    const visible = content.replace(ANSI_SEQUENCE, '')
+    if (!state.logoReplaced && BLOCK_LOGO.test(visible)) {
+      output.push(content.replace(BLOCK_LOGO, '    '), ending)
+      state.logoReplaced = true
+      offset = (match.index || 0) + line.length
+      continue
+    }
+    if (!state.logoReplaced && visible.trim() === 'O') {
+      output.push(content.replace('O', TERMINAL_LOGO), ending)
+      state.logoReplaced = true
+    } else {
+      output.push(line)
+    }
+    offset = (match.index || 0) + line.length
+  }
+  if (offset < value.length) output.push(value.slice(offset))
+  return output.join('')
+}
+
 function localizeTerminalText(value) {
   let output = String(value || '')
   for (const [source, target] of PADDED_TRANSLATIONS) output = output.replaceAll(source, target)
@@ -156,6 +189,7 @@ function possibleTextSuffix(value) {
 
 function createTerminalBrandFilter() {
   let pending = ''
+  const state = { logoReplaced: false }
 
   function write(value, final = false) {
     pending += String(value || '')
@@ -167,7 +201,7 @@ function createTerminalBrandFilter() {
       const titleStart = pending.indexOf('\x1b]', offset)
       if (titleStart < 0) {
         const rest = pending.slice(offset)
-        const transformed = transformText(rest)
+        const transformed = replaceTerminalLogo(transformText(rest), state)
         const keep = final ? 0 : possibleTextSuffix(transformed)
         output += keep ? transformed.slice(0, -keep) : transformed
         offset = pending.length
@@ -175,7 +209,7 @@ function createTerminalBrandFilter() {
         break
       }
 
-      output += transformText(pending.slice(offset, titleStart))
+      output += replaceTerminalLogo(transformText(pending.slice(offset, titleStart)), state)
       const bel = pending.indexOf('\x07', titleStart + 2)
       const st = pending.indexOf('\x1b\\', titleStart + 2)
       const titleEnd = bel < 0 ? st : st < 0 ? bel : Math.min(bel, st)
@@ -184,7 +218,7 @@ function createTerminalBrandFilter() {
         break
       }
       if (titleEnd < 0) {
-        output += transformText(pending.slice(titleStart))
+        output += replaceTerminalLogo(transformText(pending.slice(titleStart)), state)
         offset = pending.length
         break
       }

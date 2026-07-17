@@ -49,6 +49,7 @@ import {
   Minimize2,
   Paperclip,
   PanelRightClose,
+  Palette,
   PencilLine,
   Plus,
   Play,
@@ -73,6 +74,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import strawberryDreamBackground from './assets/strawberry-dream-bg.png'
 import { exportedToMessages, partToTool } from './lib/session'
 import { mergeStreamText } from './lib/stream-text'
 import { scrollToLatest } from './lib/scroll'
@@ -144,6 +146,25 @@ const providerPresets = [
   { presetKey: 'generic-openai', name: '通用 OpenAI 中转', providerId: 'openai-gateway', protocol: 'openai-compatible' as const, model: 'your-model-id', baseUrl: 'https://gateway.example.com/v1', contextWindow: 128000, outputLimit: 16384, kind: 'custom' as const },
   { presetKey: 'generic-anthropic', name: '通用 Anthropic 中转', providerId: 'anthropic-gateway', protocol: 'anthropic' as const, model: 'your-model-id', baseUrl: 'https://gateway.example.com/v1', contextWindow: 200000, outputLimit: 16384, kind: 'custom' as const },
   { presetKey: 'generic-google', name: '通用 Gemini 中转', providerId: 'google-gateway', protocol: 'google' as const, model: 'your-model-id', baseUrl: 'https://gateway.example.com/v1beta', contextWindow: 1048576, outputLimit: 65536, kind: 'custom' as const },
+]
+
+const beginnerThemePresets: Array<{
+  id: AppearanceSettings['theme']
+  label: string
+  description: string
+  icon: typeof Moon
+  swatches: [string, string, string]
+  preview?: 'strawberry-dream'
+}> = [
+  { id: 'system', label: '跟随系统', description: '自动适配电脑的浅色或深色模式', icon: Monitor, swatches: ['#f3f5f7', '#ffffff', '#176b4d'] },
+  { id: 'cloud-light', label: '云雾浅色', description: '清爽、安静，适合长时间工作', icon: Sun, swatches: ['#eef3f7', '#fbfdff', '#24745f'] },
+  { id: 'strawberry-dream', label: '草莓梦境', description: '一键复刻草莓、蝴蝶结与粉色玻璃感', icon: Heart, swatches: ['#fff1f6', '#fffafd', '#f25287'], preview: 'strawberry-dream' },
+  { id: 'strawberry-cream', label: '草莓奶油', description: '柔和粉色配色，不使用背景装饰', icon: Heart, swatches: ['#fff4f6', '#fffafa', '#c4586d'] },
+  { id: 'rose-garden', label: '樱花花园', description: '更明亮的粉彩主题，轻松但不刺眼', icon: Sparkles, swatches: ['#fff1f5', '#fffafd', '#d64f82'] },
+  { id: 'silver-minimal', label: '极简银灰', description: '低干扰、高对比，专注代码内容', icon: Monitor, swatches: ['#f2f3f4', '#fbfbfc', '#4b7967'] },
+  { id: 'wetocode-dark', label: 'Weto 深色', description: '平衡的深色工作台，适合日常开发', icon: Moon, swatches: ['#141719', '#1b2020', '#56b88b'] },
+  { id: 'midnight-code', label: '午夜代码', description: '深蓝终端感，适合夜间编码', icon: Code2, swatches: ['#101725', '#172235', '#65c7ff'] },
+  { id: 'forest-care', label: '护眼墨绿', description: '低亮度绿色背景，减少夜间疲劳', icon: Leaf, swatches: ['#15251f', '#1c2d26', '#74c396'] },
 ]
 
 const providerProtocolOptions = [
@@ -278,6 +299,8 @@ function App() {
   const [update, setUpdate] = useState<UpdateEvent>()
   const [accessMenuOpen, setAccessMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [quickModels, setQuickModels] = useState<RegistryModel[]>([])
+  const [quickModelsLoading, setQuickModelsLoading] = useState(false)
   const [switchingProvider, setSwitchingProvider] = useState(false)
   const [confirmFullControl, setConfirmFullControl] = useState(false)
   const [savingAccessMode, setSavingAccessMode] = useState(false)
@@ -439,6 +462,8 @@ function App() {
     return bootstrap.settings.providers.find((item) => item.id === bootstrap.settings.activeProviderId)
       || bootstrap.settings.providers[0]
   }, [bootstrap])
+
+  const activeQuickModel = useMemo(() => quickModels.find((model) => model.configurationId === activeProvider?.id && model.modelId === activeProvider.model), [activeProvider, quickModels])
 
   const tokenTotal = useMemo(() => messages.reduce((sum, message) => sum + (message.tokens?.total || 0), 0), [messages])
   const contextPercent = activeProvider ? Math.min(100, Math.round((tokenTotal / activeProvider.contextWindow) * 100)) : 0
@@ -829,6 +854,32 @@ function App() {
     }
   }
 
+  async function loadQuickModels(refresh = false) {
+    if (quickModelsLoading) return
+    setQuickModelsLoading(true)
+    try {
+      const registry = await bridge.listModelRegistry(project?.path, refresh)
+      setQuickModels(registry.models.filter((model) => model.isFree && !model.authRequired && model.availability !== 'unavailable'))
+    } catch (error) {
+      setToast((error as Error).message)
+    } finally {
+      setQuickModelsLoading(false)
+    }
+  }
+
+  async function activateQuickModel(model: RegistryModel) {
+    if (activeRunId || switchingProvider) return
+    setSwitchingProvider(true)
+    try {
+      updateSettings(await bridge.useRegistryModel({ configurationId: model.configurationId, modelId: model.modelId, contextWindow: model.contextWindow }))
+      setModelMenuOpen(false)
+    } catch (error) {
+      setToast((error as Error).message)
+    } finally {
+      setSwitchingProvider(false)
+    }
+  }
+
   async function replyPermission(response: 'once' | 'always' | 'reject') {
     if (!permissionRequest || permissionBusy) return
     setPermissionBusy(true)
@@ -892,7 +943,7 @@ function App() {
   }
 
   if (!bootstrap) {
-    return <div className="app-loading"><div className="brand-mark large">W</div><LoaderCircle className="spin" size={22} /><span>正在启动 WetoCode...</span></div>
+    return <div className="app-loading"><div className="brand-mark large"><TerminalSquare size={22} /></div><LoaderCircle className="spin" size={22} /><span>正在启动 WetoCode...</span></div>
   }
 
   const terminalSettings = bootstrap.settings.appearance.terminal
@@ -906,13 +957,15 @@ function App() {
     '--surface': customAppearance.surface ? `color-mix(in srgb, ${customAppearance.surface} ${customAppearance.transparency}%, transparent)` : undefined,
     '--custom-radius': `${customAppearance.radius}px`,
     '--shadow-strength': `${customAppearance.shadow}`,
-    '--background-image': customAppearance.backgroundImage ? `url("${customAppearance.backgroundImage.replaceAll('"', '%22')}")` : undefined,
+    '--background-image': customAppearance.backgroundImage
+      ? `url("${customAppearance.backgroundImage.replaceAll('"', '%22')}")`
+      : bootstrap.settings.appearance.theme === 'strawberry-dream' ? `url("${strawberryDreamBackground}")` : undefined,
   } as React.CSSProperties
 
   return (
     <div className={`app-shell ${sidebarOpen ? '' : 'sidebar-collapsed'} ${panel !== 'none' ? 'panel-open' : ''} ${panel === 'changes' || panel === 'files' ? 'changes-open' : ''} ${customAppearance.animations ? '' : 'reduce-motion'}`} data-theme={bootstrap.settings.appearance.theme} data-density={bootstrap.settings.appearance.density} style={appStyle}>
       <header className="titlebar">
-        <div className="brand"><div className="brand-mark">W</div><div><strong>WetoCode</strong><span>中文桌面 Coding Agent</span></div></div>
+        <div className="brand"><div className="brand-mark"><TerminalSquare size={16} /></div><div><strong>WetoCode</strong><span>中文桌面 Coding Agent</span></div></div>
         <div className="project-switcher">
           <FolderOpen size={15} />
           <button onClick={chooseProject}>{project?.name || '选择项目'}</button>
@@ -1008,14 +1061,26 @@ function App() {
           {previewOpen ? <button className="preview-close-button" onClick={() => setPreviewOpen(false)}><X size={14} />关闭预览</button> : <div className="model-picker" onBlur={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node)) setModelMenuOpen(false)
           }}>
-            <button className="model-select" disabled={Boolean(activeRunId) || switchingProvider} onClick={() => setModelMenuOpen((open) => !open)} aria-haspopup="menu" aria-expanded={modelMenuOpen}>
+            <button className="model-select" disabled={Boolean(activeRunId) || switchingProvider} onClick={() => {
+              setModelMenuOpen((open) => {
+                if (!open) void loadQuickModels()
+                return !open
+              })
+            }} aria-haspopup="menu" aria-expanded={modelMenuOpen}>
               <span className="model-logo"><Sparkles size={15} /></span>
-              <span><b>{activeProvider?.name}</b><small>{activeProvider?.model}</small></span>
+              <span><b>{activeQuickModel?.displayName || activeProvider?.name}</b><small>{activeProvider?.model}</small></span>
               {switchingProvider ? <LoaderCircle className="spin" size={15} /> : <ChevronDown size={15} />}
             </button>
             {modelMenuOpen && <div className="model-menu" role="menu">
-              <div className="model-menu-head"><span>选择任务模型</span><button title="打开模型中心" onClick={() => { setModelMenuOpen(false); setPanel('models') }}><Sparkles size={14} /></button></div>
-              {bootstrap.settings.providers.map((provider) => <button key={provider.id} className={provider.id === activeProvider?.id ? 'active' : ''} onClick={() => void changeActiveProvider(provider.id)}>
+              <div className="model-menu-head"><span>公共免费模型</span><button title="刷新免费模型目录" onClick={() => void loadQuickModels(true)}><RefreshCw className={quickModelsLoading ? 'spin' : ''} size={14} /></button><button title="打开模型中心" onClick={() => { setModelMenuOpen(false); setPanel('models') }}><Sparkles size={14} /></button></div>
+              {quickModels.map((model) => {
+                const selected = activeProvider?.id === model.configurationId && activeProvider.model === model.modelId
+                return <button key={model.id} className={selected ? 'active' : ''} onClick={() => void activateQuickModel(model)}>
+                  <span className="provider-mark">{model.displayName.slice(0, 1)}</span><span><b>{model.displayName}</b><small>{model.modelId} · 免费</small></span>{selected && <Check size={14} />}
+                </button>
+              })}
+              {!quickModels.length && <div className="model-menu-empty">{quickModelsLoading ? '正在同步免费模型...' : '打开项目后同步免费模型目录'}</div>}
+              {bootstrap.settings.providers.filter((provider) => provider.id !== 'wetocode-free').map((provider) => <button key={provider.id} className={provider.id === activeProvider?.id ? 'active' : ''} onClick={() => void changeActiveProvider(provider.id)}>
                 <span className="provider-mark">{provider.name.slice(0, 1)}</span><span><b>{provider.name}</b><small>{provider.model}</small></span>{provider.id === activeProvider?.id && <Check size={14} />}
               </button>)}
             </div>}
@@ -1248,7 +1313,7 @@ function OnboardingDialog({ step, project, provider, report, busy, onStep, onDoc
     void bridge.writeClipboardText(text)
   }
   return <div className="onboarding-backdrop"><section className="onboarding-dialog" role="dialog" aria-modal="true" aria-label="WetoCode 首次使用引导">
-    <aside className="onboarding-steps"><div className="onboarding-brand"><span className="brand-mark">W</span><span><b>开始使用 WetoCode</b><small>五步完成首次配置</small></span></div>{steps.map((label, index) => <button key={label} className={`${index === step ? 'active' : ''} ${index < step ? 'done' : ''}`} onClick={() => index <= step && onStep(index)}><span>{index < step ? <Check size={13} /> : index + 1}</span><b>{label}</b></button>)}</aside>
+    <aside className="onboarding-steps"><div className="onboarding-brand"><span className="brand-mark"><TerminalSquare size={16} /></span><span><b>开始使用 WetoCode</b><small>五步完成首次配置</small></span></div>{steps.map((label, index) => <button key={label} className={`${index === step ? 'active' : ''} ${index < step ? 'done' : ''}`} onClick={() => index <= step && onStep(index)}><span>{index < step ? <Check size={13} /> : index + 1}</span><b>{label}</b></button>)}</aside>
     <div className="onboarding-main">
       <div className="onboarding-head"><span><small>第 {step + 1} 步，共 5 步</small><h2>{steps[step]}</h2></span><button onClick={onSkip}>暂时跳过</button></div>
       {step === 0 && <div className="doctor-step"><p>WetoCode 只读取工具版本和项目依赖状态，不会安装软件或修改 PATH。</p>{!report ? <button className="doctor-start" disabled={busy} onClick={() => void onDoctor()}>{busy ? <LoaderCircle className="spin" size={18} /> : <Activity size={18} />}开始检查</button> : <div className="doctor-list">{report.checks.map((item) => <article className={item.status} key={item.id}><span>{item.status === 'ready' ? <CheckCircle2 size={16} /> : item.status === 'missing' ? <AlertTriangle size={16} /> : <Activity size={16} />}</span><span><b>{item.name}</b><small>{item.detail}</small>{item.action && <em>{item.action}</em>}</span></article>)}</div>}<div className="onboarding-actions">{report && <button className="ghost-button" onClick={copyDiagnostics}><ClipboardPaste size={14} />复制诊断信息</button>}<button className="ghost-button" disabled={busy} onClick={() => void onDoctor()}><RefreshCw size={14} />重新检查</button><button className="solid-button" disabled={!report} onClick={() => onStep(1)}>{missingRequired ? '稍后处理并继续' : '下一步'}<ChevronRight size={14} /></button></div></div>}
@@ -1321,6 +1386,8 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XtermTerminal | undefined>(undefined)
+  const compositionRef = useRef({ active: false, baseValue: '', value: '', emitted: '', committed: '' })
+  const nativeInputRef = useRef<{ value: string; at: number }>({ value: '', at: 0 })
   const fitRef = useRef<XtermFitAddon | undefined>(undefined)
   const infoRef = useRef<TerminalInfo | undefined>(undefined)
   const initialThemeRef = useRef(theme)
@@ -1333,6 +1400,7 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
   const [info, setInfo] = useState<TerminalInfo>()
   const [starting, setStarting] = useState(false)
   const [terminalReady, setTerminalReady] = useState(false)
+  const [showTerminalBrand, setShowTerminalBrand] = useState(false)
   const [generation, setGeneration] = useState(0)
   const [mode, setMode] = useState<TerminalInfo['mode']>('cli')
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canCopy: boolean }>()
@@ -1345,6 +1413,25 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
     terminal.paste(text)
     terminal.focus()
   }, [])
+
+  const clickTerminalChoice = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (mode !== 'cli' || event.button !== 0) return
+    const terminal = terminalRef.current
+    const host = hostRef.current
+    const current = infoRef.current
+    if (!terminal || !host || current?.status !== 'running') return
+    const bounds = host.getBoundingClientRect()
+    const cellHeight = bounds.height / Math.max(1, terminal.rows)
+    const row = Math.max(0, Math.min(terminal.rows - 1, Math.floor((event.clientY - bounds.top) / cellHeight)))
+    const line = terminal.buffer.active.getLine(terminal.buffer.active.viewportY + row)?.translateToString(true) || ''
+    const choice = line.match(/(拒绝|Reject|允许一次|Allow once|始终允许|Always allow)/i)?.[1]?.toLowerCase()
+    if (!choice) return
+    event.preventDefault()
+    event.stopPropagation()
+    const target = choice.includes('拒绝') || choice.includes('reject') ? 0 : choice.includes('始终') || choice.includes('always') ? 1 : 2
+    void bridge.sendTerminalInput(current.id, `${'\x1b[A'.repeat(8)}${'\x1b[B'.repeat(target)}\r`)
+    terminal.focus()
+  }, [mode])
 
   const pasteFromClipboard = useCallback(() => {
     void bridge.readClipboardText().then(pasteText).catch(() => onError('无法读取剪贴板内容。'))
@@ -1392,6 +1479,11 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
     let disposed = false
     let observer: ResizeObserver | undefined
     let input: { dispose: () => void } | undefined
+    let textarea: HTMLTextAreaElement | undefined
+    let onCompositionStart: (() => void) | undefined
+    let onCompositionUpdate: ((event: CompositionEvent) => void) | undefined
+    let onCompositionEnd: ((event: CompositionEvent) => void) | undefined
+    let onNativeInput: ((event: Event) => void) | undefined
     let animationFrame = 0
     void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]).then(([xterm, addon]) => {
       if (disposed || !hostRef.current) return
@@ -1441,10 +1533,62 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
       fitTerminalRef.current = scheduleFit
       observer = new ResizeObserver(scheduleFit)
       observer.observe(hostRef.current)
+      const sendNativeInput = (data: string) => {
+        const value = String(data || '')
+        const current = infoRef.current
+        if (!value || current?.status !== 'running') return
+        nativeInputRef.current = { value, at: Date.now() }
+        void bridge.sendTerminalInput(current.id, value)
+      }
       input = terminal.onData((data) => {
         const current = infoRef.current
+        const native = nativeInputRef.current
+        if (native.value && native.value === data && Date.now() - native.at < 250) {
+          nativeInputRef.current = { value: '', at: 0 }
+          return
+        }
+        if (compositionRef.current.active) compositionRef.current.emitted += data
         if (current?.status === 'running') void bridge.sendTerminalInput(current.id, data)
       })
+      const compositionTextarea = terminal.textarea
+      if (!compositionTextarea) return
+      textarea = compositionTextarea
+      onCompositionStart = () => {
+        compositionRef.current = { active: true, baseValue: compositionTextarea.value, value: '', emitted: '', committed: '' }
+      }
+      onCompositionUpdate = (event: CompositionEvent) => { compositionRef.current.value = event.data || '' }
+      onCompositionEnd = (event: CompositionEvent) => {
+        const state = compositionRef.current
+        state.committed ||= event.data || ''
+        window.setTimeout(() => {
+          if (compositionRef.current !== state) return
+          const current = state
+          const textareaDelta = compositionTextarea.value.startsWith(state.baseValue)
+            ? compositionTextarea.value.slice(state.baseValue.length)
+            : ''
+          const value = current.committed || textareaDelta || current.value
+          const nativeAlreadySent = nativeInputRef.current.value === value && Date.now() - nativeInputRef.current.at < 250
+          if (value && !current.emitted.includes(value) && !nativeAlreadySent) sendNativeInput(value)
+          compositionRef.current = { active: false, baseValue: '', value: '', emitted: '', committed: '' }
+        }, 120)
+      }
+      onNativeInput = (event: Event) => {
+        const inputEvent = event as InputEvent
+        const data = inputEvent.data || ''
+        if (compositionRef.current.active) {
+          const state = compositionRef.current
+          state.value = compositionTextarea.value.startsWith(state.baseValue)
+            ? compositionTextarea.value.slice(state.baseValue.length)
+            : data
+          if (!inputEvent.isComposing && data) state.committed = data
+          return
+        }
+        if (data && [...data].some((character) => character.codePointAt(0)! > 0x7f)) sendNativeInput(data)
+      }
+      compositionTextarea?.addEventListener('compositionstart', onCompositionStart)
+      compositionTextarea?.addEventListener('compositionupdate', onCompositionUpdate)
+      compositionTextarea?.addEventListener('compositionend', onCompositionEnd)
+      compositionTextarea?.addEventListener('input', onNativeInput)
       scheduleFit()
       setTerminalReady(true)
     }).catch((error: Error) => onError(`终端组件加载失败：${error.message}`))
@@ -1455,6 +1599,10 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
       if (current) void bridge.closeTerminal(current.id)
       observer?.disconnect()
       input?.dispose()
+      if (textarea && onCompositionStart) textarea.removeEventListener('compositionstart', onCompositionStart)
+      if (textarea && onCompositionUpdate) textarea.removeEventListener('compositionupdate', onCompositionUpdate)
+      if (textarea && onCompositionEnd) textarea.removeEventListener('compositionend', onCompositionEnd)
+      if (textarea && onNativeInput) textarea.removeEventListener('input', onNativeInput)
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
       terminalRef.current?.dispose()
       terminalRef.current = undefined
@@ -1486,6 +1634,10 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
       const current = infoRef.current
       if (!current || event.ptyId !== current.id) return
       if (event.type === 'data' && event.data) terminalRef.current?.write(event.data)
+      if (event.type === 'data' && event.data && terminalRef.current) {
+        const snapshot = Array.from({ length: Math.min(10, terminalRef.current.rows) }, (_, index) => terminalRef.current?.buffer.active.getLine(index)?.translateToString(true) || '').join('\n')
+        setShowTerminalBrand(snapshot.includes('WetoCode') && snapshot.includes('Ask anything'))
+      }
       if (event.type === 'error') onError(event.message || '终端连接已中断。')
       if (event.type === 'exit') {
         const exited = { ...current, status: 'exited' as const, exitCode: event.exitCode }
@@ -1501,6 +1653,7 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
     let cancelled = false
     async function start() {
       setStarting(true)
+      setShowTerminalBrand(false)
       const previous = infoRef.current
       if (previous) await bridge.closeTerminal(previous.id).catch(() => false)
       infoRef.current = undefined
@@ -1517,6 +1670,7 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
         }
         infoRef.current = created
         setInfo(created)
+        setShowTerminalBrand(mode === 'cli')
         await bridge.attachTerminal(created.id)
         fitTerminalRef.current()
         terminalRef.current?.focus()
@@ -1536,7 +1690,7 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
         <div><TerminalSquare size={14} /><b>终端</b><button className="terminal-resize-handle" title="拖拽调整终端高度，双击最大化或恢复" aria-label="调整终端高度" onPointerDown={beginResize} onDoubleClick={onToggleMaximized} /><div className="terminal-mode-switch"><button className={mode === 'cli' ? 'active' : ''} disabled={starting} onClick={() => setMode('cli')}>WetoCode CLI</button><button className={mode === 'shell' ? 'active' : ''} disabled={starting} onClick={() => setMode('shell')}>Shell</button></div><span>{starting ? '正在启动' : info ? `${info.status === 'running' ? '运行中' : `已退出 ${info.exitCode ?? ''}`}` : '未连接'}</span></div>
         <div><button className="icon-btn" title="从剪贴板粘贴" onClick={pasteFromClipboard}><ClipboardPaste size={14} /></button><button className="icon-btn" title={settings.collapsed ? '展开终端' : '折叠终端'} onClick={onToggleCollapsed}>{settings.collapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button><button className="icon-btn" title={settings.maximized ? '恢复终端尺寸' : '终端占满工作区'} onClick={onToggleMaximized}>{settings.maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button><button className="icon-btn" title="重新启动终端" disabled={starting} onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={14} /></button><button className="icon-btn" title="关闭终端" onClick={onClose}><X size={15} /></button></div>
       </div>
-      <div className="terminal-host" onContextMenu={(event) => {
+      <div className="terminal-host" onPointerDownCapture={clickTerminalChoice} onContextMenu={(event) => {
         event.preventDefault()
         terminalRef.current?.focus()
         const bounds = event.currentTarget.getBoundingClientRect()
@@ -1547,6 +1701,7 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
         })
       }}>
         <div className="terminal-canvas" ref={hostRef} />
+        {mode === 'cli' && showTerminalBrand && <div className="terminal-brand-overlay" aria-hidden="true"><b>W</b></div>}
         {contextMenu && <div className="terminal-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()} onMouseLeave={() => setContextMenu(undefined)}>
           <button disabled={!contextMenu.canCopy} onClick={() => {
             const terminal = terminalRef.current
@@ -1566,8 +1721,10 @@ function TerminalPanel({ project, theme, settings, custom, height, onHeightChang
 }
 
 function terminalTheme(theme: AppearanceSettings['theme'], settings?: Pick<AppearanceSettings['terminal'], 'background' | 'foreground' | 'cursor'>, custom?: Pick<AppearanceSettings['custom'], 'accent'>) {
-  const dark = ['dark', 'wetocode-dark', 'forest-care'].includes(theme) || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  const base = dark
+  const dark = ['dark', 'wetocode-dark', 'forest-care', 'midnight-code'].includes(theme) || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const base = theme === 'strawberry-dream'
+    ? { background: '#372832', foreground: '#ffeaf1', cursor: '#ff79a5', selectionBackground: '#71465a', black: '#372832', red: '#ff8ea9', green: '#bce8c7', yellow: '#f6cf8d', blue: '#a8d1ff', magenta: '#ffa7cf', cyan: '#a8e7e2', white: '#ffeaf1', brightBlack: '#a28792', brightRed: '#ffc0d1', brightGreen: '#d4f6db', brightYellow: '#ffe5b1', brightBlue: '#c9e4ff', brightMagenta: '#ffc8df', brightCyan: '#c4f5ef', brightWhite: '#fff9fb' }
+    : dark
     ? { background: '#171a1c', foreground: '#d9dfdc', cursor: '#65b88f', selectionBackground: '#315642', black: '#171a1c', red: '#e06c75', green: '#77b889', yellow: '#d9ad63', blue: '#77a8e8', magenta: '#c98ddb', cyan: '#70b8bd', white: '#d9dfdc', brightBlack: '#7c8983', brightRed: '#ee8e95', brightGreen: '#93d4a5', brightYellow: '#efca82', brightBlue: '#97c5ff', brightMagenta: '#e3aae9', brightCyan: '#93d7dc', brightWhite: '#f4f7f5' }
     : { background: '#202528', foreground: '#e0e6e3', cursor: '#72c79d', selectionBackground: '#355e49', black: '#202528', red: '#ef8585', green: '#91ce9e', yellow: '#e6c277', blue: '#8ab4f8', magenta: '#d6a1e7', cyan: '#89cdd1', white: '#e0e6e3', brightBlack: '#8a9690', brightRed: '#ffaaaa', brightGreen: '#b0e6bb', brightYellow: '#f4d796', brightBlue: '#aed0ff', brightMagenta: '#ebbeef', brightCyan: '#afe7e9', brightWhite: '#ffffff' }
   return { ...base, background: settings?.background || base.background, foreground: settings?.foreground || base.foreground, cursor: settings?.cursor || custom?.accent || base.cursor }
@@ -2027,11 +2184,24 @@ function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings,
   useEffect(() => setZoom(bootstrap.settings.appearance.zoom), [bootstrap.settings.appearance.zoom])
 
   const selectedPreset = editing ? providerPresets.find((preset) => preset.name === editing.name && preset.providerId === editing.providerId) : undefined
-  const themePresets: Array<{ id: AppearanceSettings['theme']; label: string; icon: typeof Moon }> = [
-    { id: 'wetocode-dark', label: 'Weto 深色', icon: Moon }, { id: 'cloud-light', label: '云雾浅色', icon: Sun },
-    { id: 'strawberry-cream', label: '草莓奶油', icon: Heart }, { id: 'silver-minimal', label: '极简银灰', icon: Monitor },
-    { id: 'forest-care', label: '护眼墨绿', icon: Leaf },
-  ]
+  const activeTheme = bootstrap.settings.appearance.theme
+
+  function applyTheme(theme: AppearanceSettings['theme']) {
+    const terminal = bootstrap.settings.appearance.terminal
+    const dreamTheme = theme === 'strawberry-dream'
+    return onAppearance({
+      theme,
+      custom: {
+        accent: '', background: '', surface: '',
+        transparency: dreamTheme ? 86 : 100,
+        radius: dreamTheme ? 10 : 6,
+        shadow: dreamTheme ? 2 : 1,
+        animations: true,
+        backgroundImage: '',
+      },
+      terminal: { ...terminal, background: '', foreground: '', cursor: '' },
+    })
+  }
 
   function editProvider(provider?: Partial<ProviderSettings>) {
     setError(undefined)
@@ -2090,8 +2260,9 @@ function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings,
         </section>
         <section className="settings-section">
           <div className="settings-title"><div><Sun size={16} /><span><b>外观</b><small>主题、密度和界面缩放</small></span></div></div>
-          <div className="appearance-setting theme-setting"><span><b>主题</b><small>实时应用并在重启后保持</small></span><select value={bootstrap.settings.appearance.theme} onChange={(event) => void onAppearance({ theme: event.target.value as AppearanceSettings['theme'] })}><option value="system">跟随系统</option><option value="light">经典浅色</option><option value="dark">经典深色</option>{themePresets.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select></div>
-          <div className="theme-preset-grid">{themePresets.map(({ id, label, icon: Icon }) => <button key={id} className={bootstrap.settings.appearance.theme === id ? 'active' : ''} onClick={() => void onAppearance({ theme: id })}><Icon size={15} /><span>{label}</span></button>)}</div>
+          <div className="theme-gallery-head"><span><b>一键换主题</b><small>点选预览，背景、面板、控件和终端会一起切换</small></span><Palette size={18} /></div>
+          <div className="theme-gallery">{beginnerThemePresets.map(({ id, label, description, icon: Icon, swatches, preview }) => <button key={id} className={`theme-card ${activeTheme === id ? 'active' : ''} ${preview ? `theme-card-${preview}` : ''}`} onClick={() => void applyTheme(id)}><span className="theme-card-preview" style={{ '--theme-bg': swatches[0], '--theme-surface': swatches[1], '--theme-accent': swatches[2] } as React.CSSProperties}>{preview === 'strawberry-dream' ? <><em>W</em><i /><i /><strong>♥</strong></> : <><i /><i /><i /><Icon size={13} /></>}</span><span className="theme-card-copy"><b>{label}</b><small>{description}</small></span><span className="theme-card-check">{activeTheme === id ? <CheckCircle2 size={16} /> : <ChevronRight size={15} />}</span></button>)}</div>
+          <div className="appearance-setting theme-setting"><span><b>兼容模式</b><small>需要时可直接选择旧版主题名称</small></span><select value={bootstrap.settings.appearance.theme} onChange={(event) => void applyTheme(event.target.value as AppearanceSettings['theme'])}><option value="light">经典浅色</option><option value="dark">经典深色</option></select></div>
           <div className="appearance-setting"><span><b>信息密度</b><small>调整任务列表和内容间距</small></span><div className="appearance-options text-options">
             <button className={bootstrap.settings.appearance.density === 'comfortable' ? 'active' : ''} onClick={() => onAppearance({ density: 'comfortable' })}>舒适</button>
             <button className={bootstrap.settings.appearance.density === 'compact' ? 'active' : ''} onClick={() => onAppearance({ density: 'compact' })}>紧凑</button>
@@ -2100,13 +2271,13 @@ function SettingsPanel({ bootstrap, activeProvider, update, onClose, onSettings,
             setZoom(Number(event.target.value))
           }} onPointerUp={(event) => void onAppearance({ zoom: Number(event.currentTarget.value) })} onKeyUp={(event) => void onAppearance({ zoom: Number(event.currentTarget.value) })} /><output>{Math.round(zoom * 100)}%</output></div></div>
           <div className="appearance-setting zoom-setting"><span><b>终端字号</b><small>中英文代码与中文输出同步调整</small></span><div className="zoom-slider"><input type="range" min="10" max="22" step="1" value={bootstrap.settings.appearance.terminal.fontSize} aria-label="终端字号" onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, fontSize: Number(event.target.value) } })} /><output>{bootstrap.settings.appearance.terminal.fontSize}px</output></div></div>
-          <div className="appearance-setting zoom-setting"><span><b>自定义颜色</b><small>主题 token 会立即应用到界面和终端光标</small></span><div className="color-controls"><label><span>主色</span><input type="color" value={bootstrap.settings.appearance.custom.accent || '#176b4d'} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, accent: event.target.value } })} /></label><label><span>背景</span><input type="color" value={bootstrap.settings.appearance.custom.background || '#f3f5f7'} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, background: event.target.value } })} /></label><label><span>终端背景</span><input type="color" value={bootstrap.settings.appearance.terminal.background || '#202528'} onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, background: event.target.value } })} /></label></div></div>
+          <details className="appearance-advanced"><summary>高级微调</summary><div className="appearance-advanced-body"><div className="appearance-setting zoom-setting"><span><b>自定义颜色</b><small>主题 token 会立即应用到界面和终端光标</small></span><div className="color-controls"><label><span>主色</span><input type="color" value={bootstrap.settings.appearance.custom.accent || '#176b4d'} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, accent: event.target.value } })} /></label><label><span>背景</span><input type="color" value={bootstrap.settings.appearance.custom.background || '#f3f5f7'} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, background: event.target.value } })} /></label><label><span>终端背景</span><input type="color" value={bootstrap.settings.appearance.terminal.background || '#202528'} onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, background: event.target.value } })} /></label></div></div></div></details>
           <div className="appearance-setting zoom-setting"><span><b>卡片透明度</b><small>使用背景图片时保持内容可读</small></span><div className="zoom-slider"><input type="range" min="70" max="100" step="1" value={bootstrap.settings.appearance.custom.transparency} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, transparency: Number(event.target.value), surface: bootstrap.settings.appearance.custom.surface || '#ffffff' } })} /><output>{bootstrap.settings.appearance.custom.transparency}%</output></div></div>
           <div className="appearance-setting zoom-setting"><span><b>圆角</b><small>调整主要控件的边角大小</small></span><div className="zoom-slider"><input type="range" min="0" max="12" step="1" value={bootstrap.settings.appearance.custom.radius} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, radius: Number(event.target.value) } })} /><output>{bootstrap.settings.appearance.custom.radius}px</output></div></div>
           <div className="appearance-setting zoom-setting"><span><b>阴影强度</b><small>调整浮层与工作区的层级感</small></span><div className="zoom-slider"><input type="range" min="0" max="3" step="1" value={bootstrap.settings.appearance.custom.shadow} onChange={(event) => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, shadow: Number(event.target.value) } })} /><output>{bootstrap.settings.appearance.custom.shadow}</output></div></div>
           <div className="appearance-setting zoom-setting"><span><b>终端配色</b><small>分别设置前景文字与光标</small></span><div className="color-controls"><label><span>文字</span><input type="color" value={bootstrap.settings.appearance.terminal.foreground || '#e0e6e3'} onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, foreground: event.target.value } })} /></label><label><span>光标</span><input type="color" value={bootstrap.settings.appearance.terminal.cursor || '#72c79d'} onChange={(event) => void onAppearance({ terminal: { ...bootstrap.settings.appearance.terminal, cursor: event.target.value } })} /></label></div></div>
           <div className="appearance-setting"><span><b>界面动画</b><small>可减少动画以提升稳定性</small></span><button className={`toggle-button ${bootstrap.settings.appearance.custom.animations ? 'on' : ''}`} title="切换界面动画" onClick={() => void onAppearance({ custom: { ...bootstrap.settings.appearance.custom, animations: !bootstrap.settings.appearance.custom.animations } })}><i /></button></div>
-          <div className="theme-file-actions"><button className="ghost-button" onClick={() => void selectBackgroundImage()}><Image size={14} />选择本地背景</button><button className="ghost-button" onClick={() => void bridge.exportAppearance()}><ArrowDownToLine size={14} />导出主题</button><button className="ghost-button" onClick={() => void importTheme()}><ArrowDownToLine size={14} />导入主题</button><button className="ghost-button" onClick={() => void onAppearance({ theme: 'system', custom: { accent: '', background: '', surface: '', transparency: 100, radius: 6, shadow: 1, animations: true, backgroundImage: '' }, terminal: { ...bootstrap.settings.appearance.terminal, background: '', foreground: '', cursor: '' } })}><RotateCcw size={14} />恢复默认</button></div>
+          <div className="theme-file-actions"><button className="ghost-button" onClick={() => void selectBackgroundImage()}><Image size={14} />选择本地背景</button><button className="ghost-button" onClick={() => void bridge.exportAppearance()}><ArrowDownToLine size={14} />导出主题</button><button className="ghost-button" onClick={() => void importTheme()}><ArrowDownToLine size={14} />导入主题</button><button className="ghost-button" onClick={() => void applyTheme('system')}><RotateCcw size={14} />恢复默认</button></div>
         </section>
         <section className="settings-section">
           <div className="settings-title"><div><KeyRound size={16} /><span><b>模型供应商</b><small>密钥不会进入对话上下文</small></span></div><button className="mini-button" onClick={() => editProvider()}><Plus size={14} />添加</button></div>

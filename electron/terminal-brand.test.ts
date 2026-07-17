@@ -17,6 +17,19 @@ describe('terminal branding', () => {
     expect(branded.length).toBe('OpenCode opencode OPENCODE'.length)
   })
 
+  it('brands the standalone TUI home logo without rewriting ordinary text', () => {
+    expect(brandTerminalOutput('O')).toBe('W')
+    expect(brandTerminalOutput('header\nO\nfooter')).toBe('header\nW\nfooter')
+    expect(brandTerminalOutput('\x1b[31mO\x1b[0m')).toBe('\x1b[31mW\x1b[0m')
+    expect(brandTerminalOutput('header\n\x1b[31mO\x1b[0m\nfooter')).toBe('header\n\x1b[31mW\x1b[0m\nfooter')
+    expect(brandTerminalOutput('const O = value')).toBe('const O = value')
+  })
+
+  it('clears the upstream block logo while preserving the branded name', () => {
+    expect(brandTerminalOutput('█▀▀█  OpenCode')).toContain('WetoCode')
+    expect(brandTerminalOutput('█▀▀█  OpenCode')).toMatch(/^ {4,}WetoCode/)
+  })
+
   it('replaces inherited terminal titles including Cursor titles', () => {
     expect(brandTerminalOutput('\x1b]0;Cursor 219\x07ready\x1b]2;OpenCode\x1b\\'))
       .toBe('\x1b]0;WetoCode\x07ready\x1b]0;WetoCode\x07')

@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { configuredModel, discoverOpenAICompatibleModels, modelFromOpenAI, modelFromOpenCode, priceState, uniqueModels } = require('./model-registry.cjs')
+const { configuredModel, discoverOpenAICompatibleModels, modelFromOpenAI, modelFromOpenCode, priceState, publicFreeModels, uniqueModels } = require('./model-registry.cjs')
 
 const provider = {
   id: 'gateway', name: '团队网关', providerId: 'gateway', model: 'model-a', baseUrl: 'https://gateway.example/v1',
@@ -38,5 +38,29 @@ describe('model registry adapters', () => {
     const configured = configuredModel(provider)
     const live = modelFromOpenAI(provider, { id: 'model-a', name: 'Live Model A' })
     expect(uniqueModels([configured, live])).toEqual([expect.objectContaining({ displayName: 'Live Model A', source: 'provider-api' })])
+  })
+
+  it('exposes the current OpenCode public free catalog', () => {
+    const models = publicFreeModels({ ...provider, id: 'wetocode-free', providerId: 'opencode', name: '公共免费模型' })
+    expect(models.map((model) => model.modelId)).toEqual([
+      'big-pickle', 'deepseek-v4-flash-free', 'hy3-free', 'mimo-v2.5-free', 'nemotron-3-ultra-free', 'north-mini-code-free',
+    ])
+    expect(models.every((model) => model.isFree && model.priceState === 'free' && model.authRequired === false)).toBe(true)
+  })
+
+  it('uses live OpenCode prices instead of the public fallback price mode', () => {
+    const model = modelFromOpenCode({ ...provider, providerId: 'opencode', priceMode: 'free' }, {
+      id: 'paid-model', providerID: 'opencode', name: 'Paid model', cost: [{ input: 1, output: 2 }], limit: { context: 128000 },
+    })
+    expect(model).toMatchObject({ isFree: false, priceState: 'paid' })
+  })
+
+  it('replaces the startup fallback with live OpenCode metadata', () => {
+    const fallback = publicFreeModels({ ...provider, id: 'wetocode-free', providerId: 'opencode' }).find((model) => model.modelId === 'hy3-free')
+    const live = modelFromOpenCode({ ...provider, id: 'wetocode-free', providerId: 'opencode' }, {
+      id: 'hy3-free', providerID: 'opencode', name: 'Hy3 Free', family: 'hy3-free', enabled: true,
+      capabilities: { tools: true, input: ['text'] }, cost: [{ input: 0, output: 0 }], limit: { context: 190000 },
+    })
+    expect(uniqueModels([fallback, live])).toEqual([expect.objectContaining({ displayName: 'Hy3 Free', contextWindow: 190000 })])
   })
 })

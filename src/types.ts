@@ -2,7 +2,7 @@ export type ProviderKind = 'builtin' | 'custom'
 export type ProviderProtocol = 'openai-compatible' | 'anthropic' | 'google'
 export type AccessMode = 'confirm' | 'auto' | 'plan' | 'full'
 export type ReasoningEffort = 'off' | 'high' | 'max'
-export type ThemePreference = 'system' | 'light' | 'dark' | 'wetocode-dark' | 'cloud-light' | 'strawberry-cream' | 'silver-minimal' | 'forest-care'
+export type ThemePreference = 'system' | 'light' | 'dark' | 'wetocode-dark' | 'cloud-light' | 'strawberry-cream' | 'strawberry-dream' | 'silver-minimal' | 'forest-care' | 'midnight-code' | 'rose-garden'
 export type DensityPreference = 'comfortable' | 'compact'
 
 export interface AppearanceSettings {

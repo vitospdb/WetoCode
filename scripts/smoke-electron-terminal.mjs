@@ -239,7 +239,8 @@ try {
     textarea.value = ${JSON.stringify(imePrompt)}
     textarea.dispatchEvent(new CompositionEvent('compositionupdate', { data: ${JSON.stringify(imePrompt)}, bubbles: true }))
     await new Promise((resolve) => setTimeout(resolve, 20))
-    textarea.dispatchEvent(new CompositionEvent('compositionend', { data: ${JSON.stringify(imePrompt)}, bubbles: true }))
+    textarea.dispatchEvent(new CompositionEvent('compositionend', { data: '', bubbles: true }))
+    textarea.dispatchEvent(new InputEvent('input', { data: ${JSON.stringify(imePrompt)}, inputType: 'insertText', isComposing: false, bubbles: true }))
     await new Promise((resolve) => setTimeout(resolve, 100))
   })()`)
   await client.evaluate(`window.wetocode.sendTerminalInput(${JSON.stringify(cliPtyId)}, '\\r')`)
